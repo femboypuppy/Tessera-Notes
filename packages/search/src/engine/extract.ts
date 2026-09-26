@@ -180,6 +180,13 @@ function valueText(
   }
 }
 
+/** The searchable values of a database row. */
+export interface RowValues {
+  text: string;
+  /** Pages its relation cells point to: `text` holds their titles. */
+  relations: string[];
+}
+
 /**
  * Text of every row's stored values in a database doc (select option names, dates, relation
  * titles…), by row ID, for full-text search of database rows.
@@ -187,18 +194,27 @@ function valueText(
 export function readRowValues(
   dbDoc: Y.Doc,
   resolveTitle: (pageId: string) => string | undefined,
-): Map<string, string> {
+): Map<string, RowValues> {
   const properties = listProperties(dbDoc);
-  const result = new Map<string, string>();
+  const result = new Map<string, RowValues>();
   for (const row of listRows(dbDoc)) {
     const parts: string[] = [];
+    const relations = new Set<string>();
     for (const property of properties) {
       const raw = row.values[property.id];
       if (raw === undefined || raw === null) continue;
       const text = valueText(property, raw, resolveTitle).trim();
       if (text) parts.push(text);
+      if (property.type === 'relation') for (const id of relationTargets(raw)) relations.add(id);
     }
-    result.set(row.id, parts.join('\n'));
+    result.set(row.id, { text: parts.join('\n'), relations: [...relations] });
   }
   return result;
+}
+
+/** The pages a relation value points to (none when it is not a valid relation value). */
+function relationTargets(raw: JsonValue): string[] {
+  const result = validatePropertyValue('relation', raw);
+  const value: unknown = result.success ? result.value : null;
+  return Array.isArray(value) ? value.filter((id): id is string => typeof id === 'string') : [];
 }

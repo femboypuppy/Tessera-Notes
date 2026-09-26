@@ -483,3 +483,122 @@ describe('IndexCore persistence', () => {
     expect(IndexCore.isCompatible(schemaChanged)).toBe(false);
   });
 });
+
+describe('IndexCore titles in the text of other pages', () => {
+  const notesBytes = bytes(b.doc(b.paragraph('Read ', b.pageLink('apollo'), ' first')));
+  const logBytes = bytes(b.doc(b.paragraph(b.pageLink('apollo'), ' launched on time')));
+  const pages = (apollo = 'Apollo') => [
+    meta('apollo', apollo),
+    meta('notes', 'Mission notes', { updatedAt: NOW }),
+    meta('log', 'Flight log'),
+  ];
+
+  /** Apollo, and two pages whose text shows its title through a link. */
+  function linked(): IndexCore {
+    const core = new IndexCore({ now: () => NOW });
+    core.setMeta(pages(), [], true);
+    core.setContentFromBytes('apollo', bytes(b.doc(b.paragraph('The moon program'))), NOW - DAY);
+    core.setContentFromBytes('notes', notesBytes, NOW);
+    core.setContentFromBytes('log', logBytes, NOW - DAY);
+    return core;
+  }
+
+  /** A database whose row relates to Apollo. */
+  function related(): { core: IndexCore; update: Uint8Array; metas: PageMetaLite[] } {
+    const core = new IndexCore({ now: () => NOW });
+    const metas = [
+      meta('apollo', 'Apollo'),
+      meta('db', 'Missions', { kind: 'database', updatedAt: NOW }),
+      meta('crew', 'Crew selection', { parentId: 'db', isRow: true }),
+    ];
+    core.setMeta(metas, [], true);
+    const db = new Y.Doc();
+    initDatabaseDoc(db, { titlePropertyName: 'Name', viewName: 'Table' });
+    const program = addProperty(db, {
+      name: 'Program',
+      type: 'relation',
+      relation: { targetDatabaseId: null, limit: 'many' },
+    });
+    addRow(db, { id: 'crew', values: { [program.id]: ['apollo'] } });
+    const update = Y.encodeStateAsUpdate(db);
+    core.setDatabaseFromBytes('db', update, NOW);
+    return { core, update, metas };
+  }
+
+  it('reports the pages that link to a renamed page, whose text follows once read again', () => {
+    const core = linked();
+    expect(ids(query(core, 'apollo')).sort()).toEqual(['apollo', 'log', 'notes']);
+    expect(core.setMeta([meta('apollo', 'Artemis')], [])).toEqual({
+      pages: ['notes', 'log'],
+      databases: [],
+    });
+    core.setContentFromBytes('notes', notesBytes, NOW);
+    core.setContentFromBytes('log', logBytes, NOW - DAY);
+    expect(ids(query(core, 'artemis')).sort()).toEqual(['apollo', 'log', 'notes']);
+    expect(ids(query(core, 'apollo'))).toEqual([]);
+    // Other changes to the page leave the text of the others as it is.
+    expect(core.setMeta([meta('apollo', 'Artemis', { icon: '🚀' })], [])).toEqual({
+      pages: [],
+      databases: [],
+    });
+  });
+
+  it('reports them when the page they link to appears or goes', () => {
+    const core = new IndexCore({ now: () => NOW });
+    core.setMeta([meta('notes', 'Mission notes', { updatedAt: NOW })], [], true);
+    core.setContentFromBytes('notes', notesBytes, NOW);
+    expect(core.setMeta([meta('apollo', 'Apollo')], [])).toEqual({
+      pages: ['notes'],
+      databases: [],
+    });
+    core.setContentFromBytes('notes', notesBytes, NOW);
+    expect(ids(query(core, 'apollo')).sort()).toEqual(['apollo', 'notes']);
+    expect(core.setMeta([], ['apollo'])).toEqual({ pages: ['notes'], databases: [] });
+    core.setContentFromBytes('notes', notesBytes, NOW);
+    expect(ids(query(core, 'apollo'))).toEqual([]);
+  });
+
+  it('reports the databases whose rows relate to a renamed page', () => {
+    const { core, update } = related();
+    expect(ids(query(core, 'apollo')).sort()).toEqual(['apollo', 'crew']);
+    expect(core.setMeta([meta('apollo', 'Artemis')], [])).toEqual({
+      pages: [],
+      databases: ['db'],
+    });
+    core.setDatabaseFromBytes('db', update, NOW);
+    expect(ids(query(core, 'artemis')).sort()).toEqual(['apollo', 'crew']);
+    expect(ids(query(core, 'apollo'))).toEqual([]);
+  });
+
+  it('catches up with titles that changed while the app was closed', () => {
+    const restored = new IndexCore({
+      now: () => NOW,
+      persisted: structuredClone(linked().toPersisted()),
+    });
+    expect(restored.setMeta(pages('Artemis'), [], true)).toEqual({
+      pages: ['notes', 'log'],
+      databases: [],
+    });
+    const { core, metas } = related();
+    const again = new IndexCore({ now: () => NOW, persisted: structuredClone(core.toPersisted()) });
+    const renamed = metas.map((page) =>
+      page.id === 'apollo' ? { ...page, title: 'Artemis' } : page,
+    );
+    expect(again.setMeta(renamed, [], true).databases).toEqual(['db']);
+  });
+
+  it('reads databases saved without their relation targets once', () => {
+    const { core, update, metas } = related();
+    const persisted = structuredClone(core.toPersisted());
+    // Indexes saved before rows kept their relation targets.
+    persisted.rows = persisted.rows.map(([id, { databaseId, text }]) => [id, { databaseId, text }]);
+    const restored = new IndexCore({ now: () => NOW, persisted });
+    expect(restored.setMeta(metas, [], true).databases).toEqual(['db']);
+    restored.setDatabaseFromBytes('db', update, NOW);
+    const again = new IndexCore({
+      now: () => NOW,
+      persisted: structuredClone(restored.toPersisted()),
+    });
+    expect(again.setMeta(metas, [], true).databases).toEqual([]);
+  });
+});

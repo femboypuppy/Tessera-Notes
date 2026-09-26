@@ -73,6 +73,11 @@ export interface ContentRecord {
 export interface RowValuesRecord {
   databaseId: string;
   text: string;
+  /**
+   * Pages the row's relation cells point to (`text` holds their titles). Indexes saved before it
+   * existed lack it; their databases are read again once.
+   */
+  relations?: string[];
 }
 
 /**

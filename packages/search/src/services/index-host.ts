@@ -1,7 +1,9 @@
 import {
+  createBatchDebouncer,
   databaseDocName,
   pageDocName,
   tagKey,
+  type BatchDebouncer,
   type DocHandle,
   type DocStore,
   type EventBus,
@@ -13,7 +15,7 @@ import {
   type WorkspaceInfo,
 } from '@tessera/core';
 import * as Y from 'yjs';
-import type { ChangeSummary } from '../engine/index-core';
+import type { ChangeSummary, StaleSet } from '../engine/index-core';
 import type { ContentItem, DatabaseItem } from '../engine/protocol';
 import { parseQuery } from '../engine/query';
 import type { IndexTransport } from '../engine/transport';
@@ -52,6 +54,11 @@ export interface IndexHostOptions {
   concurrency?: number;
   /** Delay before listeners hear about index changes. Default 120 ms. */
   notifyDelayMs?: number;
+  /**
+   * Delay before the pages that show a changed title are read again (a title typed letter by
+   * letter changes with every key). Default 1000 ms, at most 5 s while titles keep changing.
+   */
+  retitleDelayMs?: number;
 }
 
 /** Progress of the index, for "Indexing…" hints. */
@@ -118,6 +125,10 @@ export class IndexHost {
   private readonly pendingMeta = new Set<string>();
   private readonly pendingRemovals = new Set<string>();
   private metaScheduled = false;
+  /** Settles once the index applied the last metadata update and answered with its stale docs. */
+  private metaApplied: Promise<void> = Promise.resolve();
+  /** Docs that show a title that changed, read again once titles settle. */
+  private readonly retitled: BatchDebouncer;
   private readonly high = new Set<QueueKey>();
   private readonly low = new Set<QueueKey>();
   private readonly waiters = new Map<QueueKey, Deferred[]>();
@@ -146,6 +157,12 @@ export class IndexHost {
       transport: this.transport.kind,
       restored: false,
     };
+    this.retitled = createBatchDebouncer(
+      (keys) => {
+        for (const key of keys) if (isQueueKey(key)) void this.enqueue(key, 'low');
+      },
+      { delayMs: options.retitleDelayMs ?? 1000, maxWaitMs: 5000 },
+    );
     const { events } = context;
     this.offs.push(
       events.on('page.created', ({ page }) => this.metaChanged([page.id])),
@@ -200,8 +217,7 @@ export class IndexHost {
       const { restored } = await init;
       const stale = await meta;
       this.setStatus({ restored });
-      for (const id of stale.pages) void this.enqueue(`p:${id}`, 'low');
-      for (const id of stale.databases) void this.enqueue(`d:${id}`, 'low');
+      this.readAgain(stale);
       if (this.high.size + this.low.size === 0) this.setStatus({ state: 'ready' });
     } catch (error) {
       // Queries fail on their own (the transport is broken); `ready` itself never rejects.
@@ -218,6 +234,7 @@ export class IndexHost {
     hosts.delete(this.context.workspaceDoc);
     for (const off of this.offs) off();
     this.offs.length = 0;
+    this.retitled.cancel();
     this.high.clear();
     this.low.clear();
     for (const waiters of this.waiters.values()) for (const waiter of waiters) waiter.resolve();
@@ -243,6 +260,9 @@ export class IndexHost {
     await this.ready;
     for (;;) {
       this.flushMeta();
+      // Its answer may name docs to read again: read them now rather than once titles settle.
+      await this.metaApplied;
+      this.retitled.flush();
       if (this.pumping) await this.pumping;
       else if (this.high.size + this.low.size > 0) await this.pump();
       else break;
@@ -354,9 +374,19 @@ export class IndexHost {
     this.pendingMeta.clear();
     this.pendingRemovals.clear();
     if (upserts.length === 0 && removes.length === 0) return;
-    this.transport
-      .request({ type: 'meta', upserts, removes, full: false })
-      .catch((error: unknown) => console.warn('[search] metadata update failed', error));
+    this.metaApplied = this.transport.request({ type: 'meta', upserts, removes, full: false }).then(
+      // After a title changed, the pages that link to it and the rows that relate to it show the
+      // old title in their text.
+      (stale) => {
+        for (const key of staleKeys(stale)) this.retitled.call(key);
+      },
+      (error: unknown) => console.warn('[search] metadata update failed', error),
+    );
+  }
+
+  /** Queues the pages and databases the index reports as stale. */
+  private readAgain(stale: StaleSet): void {
+    for (const key of staleKeys(stale)) void this.enqueue(key, 'low');
   }
 
   // ---------------------------------------------------------------------------------------------
@@ -671,6 +701,17 @@ export class IndexHost {
     this.flushMeta();
     return this.transport.request({ type: 'neighborhood', pageId, depth });
   }
+}
+
+function staleKeys(stale: StaleSet): QueueKey[] {
+  return [
+    ...stale.pages.map((id): QueueKey => `p:${id}`),
+    ...stale.databases.map((id): QueueKey => `d:${id}`),
+  ];
+}
+
+function isQueueKey(key: string): key is QueueKey {
+  return key.startsWith('p:') || key.startsWith('d:');
 }
 
 function sameMeta(a: PageMetaLite, b: PageMetaLite): boolean {
