@@ -1,6 +1,8 @@
-# The documentation site (VitePress in `docs/`, a standalone pnpm project with its own lockfile).
-# Pull requests build it (VitePress fails on dead links); pushes to main also deploy it to GitHub
-# Pages. One-time setting: Settings → Pages → Source: "GitHub Actions".
+# The documentation site (VitePress in `docs/`, a standalone pnpm project with its own lockfile), and
+# the default plugin registry in its `plugins/` folder (the example plugins' zips and registry.json,
+# which Settings → Plugins → Browse reads). Pull requests build both (VitePress fails on dead links);
+# pushes to main also deploy them to GitHub Pages, then check the published registry from outside.
+# One-time setting: Settings → Pages → Source: "GitHub Actions".
 name: Docs
 
 on:
@@ -10,11 +12,19 @@ on:
       - 'docs/**'
       - 'assets/brand/**'
       - '.github/workflows/docs.yml'
+      - 'examples/plugins/**'
+      - 'packages/plugins/**'
+      - 'packages/plugin-api/**'
+      - 'pnpm-lock.yaml'
   pull_request:
     paths:
       - 'docs/**'
       - 'assets/brand/**'
       - '.github/workflows/docs.yml'
+      - 'examples/plugins/**'
+      - 'packages/plugins/**'
+      - 'packages/plugin-api/**'
+      - 'pnpm-lock.yaml'
   workflow_dispatch:
 
 permissions:
@@ -29,7 +39,7 @@ jobs:
   build:
     name: Build
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     permissions:
       contents: read
       pages: read
@@ -46,7 +56,9 @@ jobs:
         with:
           node-version-file: .nvmrc
           cache: pnpm
-          cache-dependency-path: docs/pnpm-lock.yaml
+          cache-dependency-path: |
+            docs/pnpm-lock.yaml
+            pnpm-lock.yaml
       - name: Pages settings
         id: pages
         if: github.event_name != 'pull_request'
@@ -64,6 +76,18 @@ jobs:
         run: |
           if [ "$EVENT_NAME" != "pull_request" ]; then export DOCS_BASE="$BASE_PATH/"; fi
           pnpm build
+      - name: Install the monorepo (to build the example plugins)
+        run: pnpm install --frozen-lockfile
+      # Every URL in registry.json comes from the site's address (pull requests use the app's
+      # default), and every zip gets its SHA-256.
+      - name: Plugin registry
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          SITE_URL: ${{ steps.pages.outputs.base_url }}
+        run: |
+          args=(--out docs/.vitepress/dist/plugins)
+          if [ "$EVENT_NAME" != "pull_request" ]; then args+=(--base-url "$SITE_URL/plugins/"); fi
+          pnpm --filter @tessera/plugins build:registry "${args[@]}"
       - name: Upload the site
         if: github.event_name != 'pull_request'
         uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
@@ -79,6 +103,8 @@ jobs:
     permissions:
       pages: write
       id-token: write
+    outputs:
+      page-url: ${{ steps.deployment.outputs.page_url }}
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
@@ -86,3 +112,29 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
+
+  # The registry as the apps will fetch it: the app's DEFAULT_REGISTRY_URL inside the deployed site,
+  # registry.json matching its schema, and every zip answering with the listed SHA-256 and a CORS
+  # header any origin (web, desktop, self-hosted) can read.
+  registry:
+    name: Registry check
+    needs: deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Check the published registry
+        env:
+          PAGE_URL: ${{ needs.deploy.outputs.page-url }}
+        run: pnpm --filter @tessera/plugins check:registry --site "$PAGE_URL"
