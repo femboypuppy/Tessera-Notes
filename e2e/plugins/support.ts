@@ -2,6 +2,9 @@ import { existsSync, mkdirSync, readFileSync, rmdirSync, statSync } from 'node:f
 import { fileURLToPath } from 'node:url';
 import { expect, type BrowserContext, type FrameLocator, type Page } from '@playwright/test';
 import { buildExamples } from '../../packages/plugins/scripts/build-examples';
+import { buildRegistry } from '../../packages/plugins/scripts/registry-files';
+import { DEFAULT_REGISTRY_BASE } from '../../packages/plugins/src/constants';
+import { zipFileName, type RegistryDocument } from '../../packages/plugins/src/registry-publish';
 import { createPage, createWorkspace, pageTree, readDiagnostics } from '../architect/helpers';
 
 /** Helpers for the plugin specs. */
@@ -12,7 +15,7 @@ const FIXTURES = fileURLToPath(new URL('./fixtures/', import.meta.url));
 const LOCK = `${EXAMPLES}.e2e-build-lock`;
 
 /** Where the default registry and the example zips are published (served locally in tests). */
-export const REGISTRY_BASE = 'https://femboypuppy.github.io/Tessera-Notes/plugins/';
+export const REGISTRY_BASE = DEFAULT_REGISTRY_BASE;
 /** Test-only plugins in e2e/plugins/fixtures, served under this origin. */
 export const FIXTURE_BASE = 'https://fixtures.tessera.test/';
 
@@ -38,25 +41,53 @@ export async function ensureExamplesBuilt(): Promise<void> {
   }
 }
 
+/** GitHub Pages' CORS header, which the docs site serves the registry with. */
 const headers = { 'access-control-allow-origin': '*' };
 
-/** Serves the example registry and the built example zips at their published addresses. */
-export async function serveRegistry(page: Page): Promise<void> {
-  const registry = JSON.parse(readFileSync(`${EXAMPLES}registry.json`, 'utf8')) as {
-    plugins: Array<{ id: string; version: string }>;
-  };
+let published: Promise<{ registry: RegistryDocument; zips: Map<string, Uint8Array> }> | null = null;
+
+/**
+ * The default registry exactly as the docs workflow publishes it: every example built, every URL
+ * under REGISTRY_BASE, every zip's SHA-256 (`build-registry.ts` does the same).
+ */
+export function publishedRegistry(): Promise<{
+  registry: RegistryDocument;
+  zips: Map<string, Uint8Array>;
+}> {
+  published ??= (async () => {
+    await ensureExamplesBuilt();
+    const { registry, plugins } = await buildRegistry({ baseUrl: REGISTRY_BASE });
+    return {
+      registry,
+      zips: new Map(plugins.map((plugin) => [zipFileName(plugin.manifest), plugin.zip])),
+    };
+  })();
+  return published;
+}
+
+/**
+ * Serves the default registry and the example zips at their published addresses. `tamper`
+ * changes one byte of that plugin's zip, which then no longer matches its SHA-256.
+ */
+export async function serveRegistry(page: Page, options: { tamper?: string } = {}): Promise<void> {
+  const { registry, zips } = await publishedRegistry();
   await page.route(`${REGISTRY_BASE}**`, async (route) => {
     const name = new URL(route.request().url()).pathname.split('/').pop() ?? '';
     if (name === 'registry.json') {
-      await route.fulfill({ path: `${EXAMPLES}registry.json`, headers });
+      await route.fulfill({ json: registry, headers });
       return;
     }
-    const plugin = registry.plugins.find((entry) => name === `${entry.id}-${entry.version}.zip`);
-    if (!plugin) {
+    const zip = zips.get(name);
+    if (!zip) {
       await route.fulfill({ status: 404, headers, body: '' });
       return;
     }
-    await route.fulfill({ path: exampleZip(plugin.id, plugin.version), headers });
+    const body = Buffer.from(zip);
+    if (options.tamper && name.startsWith(`${options.tamper}-`)) {
+      const at = Math.floor(body.length / 2);
+      body.writeUInt8(body.readUInt8(at) ^ 0xff, at);
+    }
+    await route.fulfill({ body, headers, contentType: 'application/zip' });
   });
 }
 
