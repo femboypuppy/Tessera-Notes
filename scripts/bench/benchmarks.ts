@@ -14,7 +14,7 @@ import {
 } from '../../packages/testkit/src/playwright/features';
 import type { HarnessServer } from '../../packages/testkit/src/playwright/harness-server';
 import type { BenchResult } from './report.ts';
-import { median, percentile } from './stats.ts';
+import { formatMs, median, percentile } from './stats.ts';
 
 export interface BenchContext {
   browser: Browser;
@@ -389,82 +389,114 @@ export const BENCHMARKS: readonly Benchmark[] = [
     title: 'Import 2,000 markdown files: longest main-thread block',
     budget: { max: 100, label: 'SPEC.md §10: without freezing the UI (no task over 100 ms)' },
     async run(context) {
-      const { page, close } = await openHarness(context, {
-        seed: 'import',
-        pages: 1990,
-        databases: 3,
-        rowsPerDatabase: 20,
-      });
-      try {
-        const measured = await page.evaluate(async () => {
-          const harness = window.__tesseraHarness;
-          const ctx = harness?.ctx;
-          if (!harness || !ctx) throw new Error('No workspace context');
-          const encoder = new TextEncoder();
-          const files = harness.markdownFiles().map((file) => {
-            const bytes = encoder.encode(file.content);
-            return {
-              path: file.path,
-              size: bytes.byteLength,
-              text: async () => file.content,
-              bytes: async () => bytes,
-            };
-          });
-          const [best] = await ctx.importers.detect(files);
-          if (!best) return { error: 'No importer recognized the markdown files' } as const;
-          // In the app, detection runs when files are chosen and the import starts when the
-          // person clicks Import below the preview; detection loads the import's code meanwhile.
-          // The pause stands for that moment, so this measures the import, not a one-time load.
-          await new Promise((resolve) => setTimeout(resolve, 1500));
-          const longTasks: number[] = [];
-          const observer = new PerformanceObserver((list) => {
-            for (const entry of list.getEntries()) longTasks.push(entry.duration);
-          });
-          observer.observe({ type: 'longtask' });
-          const started = performance.now();
-          const report = await best.importer.run(
-            files,
-            {
-              workspace: ctx.workspace,
-              loadPageDoc: (id) => ctx.loadPageDoc(id),
-              loadDatabaseDoc: (id) => ctx.loadDatabaseDoc(id),
-              assets: ctx.services.assetStore,
-              codec: ctx.services.markdownCodec,
-              parentId: null,
-              rootTitle: 'Benchmark import',
-              currentUser: ctx.currentUser,
-            },
-            () => undefined,
-            new AbortController().signal,
-          );
-          const duration = performance.now() - started;
-          await new Promise((resolve) => setTimeout(resolve, 200));
-          observer.disconnect();
-          return {
-            importer: best.importer.id,
-            files: files.length,
-            pages: report.counts.pages,
-            duration,
-            longest: Math.max(0, ...longTasks),
-            longTasks: longTasks.length,
-          };
-        });
+      // The budget holds for every import, so the result is the longest block of all runs.
+      const runs: ImportRun[] = [];
+      for (let run = 0; run < context.runs; run += 1) {
+        const measured = await importOnce(context);
         if ('error' in measured) return { status: 'failed', reason: measured.error };
-        return {
-          status: 'ok',
-          value: measured.longest,
-          unit: 'ms',
-          measure: `${measured.longTasks} long tasks`,
-          details: {
-            importer: measured.importer,
-            files: String(measured.files),
-            'pages created': String(measured.pages),
-            'total time': measured.duration,
-          },
-        };
-      } finally {
-        await close();
+        runs.push(measured);
+        context.log(
+          `  run ${run + 1}: longest ${Math.round(measured.longest)} ms, ${measured.longTasks} long tasks`,
+        );
       }
+      const last = runs.at(-1);
+      if (!last) throw new Error('No import ran');
+      return {
+        status: 'ok',
+        value: Math.max(...runs.map((measured) => measured.longest)),
+        unit: 'ms',
+        measure:
+          runs.length > 1
+            ? `longest of ${runs.length} runs, ${runs.map((measured) => measured.longTasks).join(' + ')} long tasks`
+            : `${last.longTasks} long tasks`,
+        details: {
+          importer: last.importer,
+          files: String(last.files),
+          'pages created': String(last.pages),
+          ...(runs.length > 1
+            ? {
+                'longest per run': runs.map((measured) => formatMs(measured.longest)).join(', '),
+              }
+            : {}),
+          'total time': median(runs.map((measured) => measured.duration)),
+        },
+      };
     },
   },
 ];
+
+interface ImportRun {
+  importer: string;
+  files: number;
+  pages: number;
+  duration: number;
+  longest: number;
+  longTasks: number;
+}
+
+/** Imports the generated vault once into a fresh 2,000-page workspace, watching long tasks. */
+async function importOnce(context: BenchContext): Promise<ImportRun | { error: string }> {
+  const { page, close } = await openHarness(context, {
+    seed: 'import',
+    pages: 1990,
+    databases: 3,
+    rowsPerDatabase: 20,
+  });
+  try {
+    return await page.evaluate(async () => {
+      const harness = window.__tesseraHarness;
+      const ctx = harness?.ctx;
+      if (!harness || !ctx) throw new Error('No workspace context');
+      const encoder = new TextEncoder();
+      const files = harness.markdownFiles().map((file) => {
+        const bytes = encoder.encode(file.content);
+        return {
+          path: file.path,
+          size: bytes.byteLength,
+          text: async () => file.content,
+          bytes: async () => bytes,
+        };
+      });
+      const [best] = await ctx.importers.detect(files);
+      if (!best) return { error: 'No importer recognized the markdown files' } as const;
+      // In the app, detection runs when files are chosen and the import starts when the
+      // person clicks Import below the preview; detection loads the import's code meanwhile.
+      // The pause stands for that moment, so this measures the import, not a one-time load.
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+      const longTasks: number[] = [];
+      const observer = new PerformanceObserver((list) => {
+        for (const entry of list.getEntries()) longTasks.push(entry.duration);
+      });
+      observer.observe({ type: 'longtask' });
+      const started = performance.now();
+      const report = await best.importer.run(
+        files,
+        {
+          workspace: ctx.workspace,
+          loadPageDoc: (id) => ctx.loadPageDoc(id),
+          loadDatabaseDoc: (id) => ctx.loadDatabaseDoc(id),
+          assets: ctx.services.assetStore,
+          codec: ctx.services.markdownCodec,
+          parentId: null,
+          rootTitle: 'Benchmark import',
+          currentUser: ctx.currentUser,
+        },
+        () => undefined,
+        new AbortController().signal,
+      );
+      const duration = performance.now() - started;
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      observer.disconnect();
+      return {
+        importer: best.importer.id,
+        files: files.length,
+        pages: report.counts.pages,
+        duration,
+        longest: Math.max(0, ...longTasks),
+        longTasks: longTasks.length,
+      };
+    });
+  } finally {
+    await close();
+  }
+}
