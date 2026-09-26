@@ -164,12 +164,16 @@ export function hasUpdate(entry: RegistryEntry, installedVersion: string): boole
 
 /**
  * Downloads a plugin listed in a registry and checks it against its entry: same ID and version,
- * no permissions beyond the listed ones, and the SHA-256 when the entry has one.
+ * no permissions beyond the listed ones, and the SHA-256 when the entry has one. With
+ * `requireChecksum` (the default registry, which always publishes one), an entry without a
+ * SHA-256 is refused before anything is downloaded.
  */
 export async function downloadRegistryPlugin(
   entry: RegistryEntry,
-  options: { fetch?: typeof fetch; signal?: AbortSignal } = {},
+  options: { fetch?: typeof fetch; signal?: AbortSignal; requireChecksum?: boolean } = {},
 ): Promise<PluginBundle> {
+  if (options.requireChecksum && !entry.sha256)
+    throw new PluginBundleError(t('errChecksumMissing', { plugin: entry.name }));
   const fetchImpl = options.fetch ?? fetch.bind(globalThis);
   let bundle: PluginBundle;
   if (entry.sha256 || /\.zip($|\?)/i.test(entry.download)) {

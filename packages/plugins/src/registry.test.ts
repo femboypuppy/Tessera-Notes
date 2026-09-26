@@ -103,4 +103,18 @@ describe('registry downloads', () => {
       downloadRegistryPlugin(entry({ permissions: ['pages:read'] }), { fetch: fetchImpl }),
     ).rejects.toThrow(/asks for permissions its registry entry doesn’t list \(ui:panels\)/);
   });
+
+  it('refuses an entry without a checksum when one is required, before downloading', async () => {
+    let requests = 0;
+    const fetchImpl: typeof fetch = (input, init) => {
+      requests += 1;
+      return fakeFetch({ 'https://plugins.example/word-count-1.0.0.zip': archive })(input, init);
+    };
+    await expect(
+      downloadRegistryPlugin(entry(), { fetch: fetchImpl, requireChecksum: true }),
+    ).rejects.toThrow(/lists no checksum for Word count/);
+    expect(requests).toBe(0);
+    // Other registries may leave it out (it's recommended, not required).
+    await expect(downloadRegistryPlugin(entry(), { fetch: fetchImpl })).resolves.toBeTruthy();
+  });
 });

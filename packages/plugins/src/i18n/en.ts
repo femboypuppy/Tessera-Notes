@@ -163,6 +163,8 @@ export const en = {
   errRegistryFormat: 'That file isn’t a Tessera plugin registry.',
   errChecksum:
     'The download of {plugin} doesn’t match the registry’s checksum, so it wasn’t installed.',
+  errChecksumMissing:
+    'The registry lists no checksum for {plugin}, so it can’t be verified and wasn’t installed.',
   errRegistryMismatch: 'The download of {plugin} doesn’t match its registry entry (ID or version).',
   errRegistryPermissions:
     '{plugin} asks for permissions its registry entry doesn’t list ({permissions}), so it wasn’t installed.',

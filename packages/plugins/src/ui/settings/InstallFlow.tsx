@@ -23,6 +23,7 @@ import {
   parseInstallUrl,
   type PluginBundle,
 } from '../../bundle';
+import { DEFAULT_REGISTRY_URL } from '../../constants';
 import { t } from '../../i18n';
 import type { InstallPlan, PluginManager } from '../../manager';
 import { sortPermissionsByRisk } from '../../manifest';
@@ -125,8 +126,9 @@ export function useInstaller(
     openDevDialog: () => setUrlDialog('dev'),
     fromRegistry(entry, registryUrl) {
       setPendingId(entry.id);
+      // The default registry publishes a checksum for every zip, so none may be missing there.
       void load(t('readingPlugin'), { kind: 'registry', url: entry.download, registryUrl }, () =>
-        downloadRegistryPlugin(entry),
+        downloadRegistryPlugin(entry, { requireChecksum: registryUrl === DEFAULT_REGISTRY_URL }),
       ).finally(() => setPendingId(null));
     },
     pendingId,
