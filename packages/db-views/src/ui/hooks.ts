@@ -1,9 +1,16 @@
-import type { AppContext, ResolvedRow, ViewConfig } from '@tessera/core';
-import { useAppContext, useDatabaseDoc, usePages } from '@tessera/core/react';
+import type {
+  AppContext,
+  PageMeta,
+  PropertyDefinition,
+  ResolvedRow,
+  ViewConfig,
+} from '@tessera/core';
+import { useAppContext, useDatabaseDoc, usePagesSelector } from '@tessera/core/react';
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { t } from '../i18n';
 import { acquireDatabaseStore, type DatabaseSnapshot, type DatabaseStore } from '../model/store';
 import type { DatabaseRef } from '../model/operations';
+import { relationIds } from '../model/relations';
 import { createQueryContext, type QueryContext } from '../query/types';
 import { runQuery, type QueryResult } from '../query/run';
 import type { SearchCache } from '../query/search';
@@ -69,24 +76,75 @@ export function useToday(): number {
   return now;
 }
 
+/** A page that a relation cell points to, as the view last saw it. */
+interface RelatedPage {
+  page: PageMeta | undefined;
+  trashed: boolean;
+}
+
+/** Every page that the rows' relation cells point to, once each. */
+function relationTargets(
+  rows: readonly ResolvedRow[] | undefined,
+  properties: readonly PropertyDefinition[] | undefined,
+): string[] {
+  const relations = properties?.filter((property) => property.type === 'relation') ?? [];
+  const ids = new Set<string>();
+  if (rows && relations.length > 0) {
+    for (const row of rows)
+      for (const property of relations)
+        for (const id of relationIds(row.values[property.id])) ids.add(id);
+  }
+  return [...ids];
+}
+
+function sameRelatedPages(
+  a: ReadonlyMap<string, RelatedPage>,
+  b: ReadonlyMap<string, RelatedPage>,
+): boolean {
+  if (a.size !== b.size) return false;
+  for (const [id, entry] of a) {
+    const other = b.get(id);
+    if (!other || other.page !== entry.page || other.trashed !== entry.trashed) return false;
+  }
+  return true;
+}
+
 /**
  * The query context of the viewer: clock (refreshed at midnight), time zone, display locale,
- * week start, and page titles and visibility from the live page index (relations).
+ * week start, and the titles and visibility of related pages. It changes when a page that one of
+ * the database's relation cells points to changes, not with every page in the workspace, so a
+ * view queries and renders again only when its results can change.
  */
-export function useQueryContext(weekStartsOn: 0 | 1 = 1): QueryContext {
-  const pages = usePages();
-  const now = useToday();
-  return useMemo(
-    () =>
-      createQueryContext({
-        now,
-        locale: displayLocale(),
-        weekStartsOn,
-        titleOf: (id) => pages.get(id)?.title,
-        isPageVisible: (id) => pages.has(id) && !pages.isTrashed(id),
-      }),
-    [pages, now, weekStartsOn],
+export function useQueryContext(
+  weekStartsOn: 0 | 1 = 1,
+  database?: Pick<DatabaseSnapshot, 'rows' | 'properties'> | null,
+): QueryContext {
+  const { workspace } = useAppContext();
+  const rows = database?.rows;
+  const properties = database?.properties;
+  const targets = useMemo(() => relationTargets(rows, properties), [rows, properties]);
+  const related = usePagesSelector(
+    (pages) =>
+      new Map(targets.map((id) => [id, { page: pages.get(id), trashed: pages.isTrashed(id) }])),
+    sameRelatedPages,
   );
+  const now = useToday();
+  return useMemo(() => {
+    // Pages no relation cell points to (a CSV being imported, say) are read as they are now.
+    const live = () => workspace.pages.getSnapshot();
+    return createQueryContext({
+      now,
+      locale: displayLocale(),
+      weekStartsOn,
+      titleOf: (id) => (related.get(id) ?? { page: live().get(id) }).page?.title,
+      isPageVisible: (id) => {
+        const known = related.get(id);
+        if (known) return known.page !== undefined && !known.trashed;
+        const pages = live();
+        return pages.has(id) && !pages.isTrashed(id);
+      },
+    });
+  }, [workspace, related, now, weekStartsOn]);
 }
 
 /** One search cache per schema: row objects are stable, so repeated searches reuse their text. */

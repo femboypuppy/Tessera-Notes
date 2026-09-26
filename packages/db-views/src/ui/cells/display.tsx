@@ -1,10 +1,11 @@
 import {
   isSafeHref,
   type JsonValue,
+  type PageMeta,
   type PropertyDefinition,
   type ResolvedRow,
 } from '@tessera/core';
-import { useAppContext, usePages } from '@tessera/core/react';
+import { sameItems, useAppContext, usePagesSelector } from '@tessera/core/react';
 import { cn } from '@tessera/ui';
 import { Check, FileText } from 'lucide-react';
 import { memo, type MouseEvent } from 'react';
@@ -29,33 +30,37 @@ const stop = (event: MouseEvent) => event.stopPropagation();
 
 function RelationChips({ ids, wrap }: { ids: readonly string[]; wrap: boolean }) {
   const ctx = useAppContext();
-  const pages = usePages();
-  const visible = ids.filter((id) => pages.has(id) && !pages.isTrashed(id));
+  // Only the linked pages: a cell re-renders when one of them changes, not with every page.
+  const visible = usePagesSelector(
+    (pages) =>
+      ids.flatMap((id): PageMeta[] => {
+        const page = pages.get(id);
+        return page && !pages.isTrashed(id) ? [page] : [];
+      }),
+    sameItems,
+  );
   return (
     <span className={cn('flex min-w-0 gap-1', wrap ? 'flex-wrap' : 'overflow-hidden')}>
-      {visible.map((id) => {
-        const page = pages.get(id);
-        return (
-          <a
-            key={id}
-            href={`/p/${encodeURIComponent(id)}`}
-            tabIndex={-1}
-            onClick={(event) => {
-              event.preventDefault();
-              event.stopPropagation();
-              ctx.navigate(id);
-            }}
-            className="inline-flex max-w-full shrink-0 items-center gap-1 rounded-sm px-1 text-ui text-fg underline decoration-border-strong underline-offset-2 hover:bg-hover"
-          >
-            {page?.icon ? (
-              <span aria-hidden="true">{page.icon}</span>
-            ) : (
-              <FileText aria-hidden="true" className="size-3.5 shrink-0 text-fg-subtle" />
-            )}
-            <span className="truncate">{displayTitle(page?.title)}</span>
-          </a>
-        );
-      })}
+      {visible.map((page) => (
+        <a
+          key={page.id}
+          href={`/p/${encodeURIComponent(page.id)}`}
+          tabIndex={-1}
+          onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            ctx.navigate(page.id);
+          }}
+          className="inline-flex max-w-full shrink-0 items-center gap-1 rounded-sm px-1 text-ui text-fg underline decoration-border-strong underline-offset-2 hover:bg-hover"
+        >
+          {page.icon ? (
+            <span aria-hidden="true">{page.icon}</span>
+          ) : (
+            <FileText aria-hidden="true" className="size-3.5 shrink-0 text-fg-subtle" />
+          )}
+          <span className="truncate">{displayTitle(page.title)}</span>
+        </a>
+      ))}
     </span>
   );
 }

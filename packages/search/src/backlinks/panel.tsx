@@ -1,5 +1,11 @@
 import { type SidePanelProps, type UnlinkedMention } from '@tessera/core';
-import { useAppContext, usePages, useSetting } from '@tessera/core/react';
+import {
+  sameItems,
+  useAppContext,
+  usePage,
+  usePagesSelector,
+  useSetting,
+} from '@tessera/core/react';
 import { Button, cn, EmptyState, Skeleton, Switch } from '@tessera/ui';
 import { ChevronRight, Link2, Link2Off, TriangleAlert } from 'lucide-react';
 import { useId, useState, type ReactNode } from 'react';
@@ -73,8 +79,8 @@ function Section({
 
 function SourceHeader({ pageId, count }: { pageId: string; count?: string }) {
   const ctx = useAppContext();
-  const snapshot = usePages();
-  const page = snapshot.get(pageId);
+  const page = usePage(pageId);
+  const isRow = usePagesSelector((pages) => pages.isRow(pageId));
   const title = displayTitle(page?.title);
   return (
     <button
@@ -82,7 +88,7 @@ function SourceHeader({ pageId, count }: { pageId: string; count?: string }) {
       onClick={() => ctx.navigate(pageId)}
       className="duration-fast flex h-7 w-full min-w-0 items-center gap-2 rounded-md px-1.5 text-left text-sm font-medium text-fg transition-colors outline-none hover:bg-hover focus-visible:ring-2 focus-visible:ring-focus"
     >
-      <PageGlyph page={page} isRow={snapshot.isRow(pageId)} />
+      <PageGlyph page={page} isRow={isRow} />
       <span className="min-w-0 flex-1 truncate">{title}</span>
       {count ? <span className="shrink-0 text-xs font-normal text-fg-subtle">{count}</span> : null}
     </button>
@@ -181,7 +187,6 @@ function LinkedReferences({ pageId }: { pageId: string }) {
 
 function UnlinkedMentions({ pageId, readOnly }: { pageId: string; readOnly: boolean }) {
   const ctx = useAppContext();
-  const snapshot = usePages();
   const mentions = useLinkData(pageId, loadMentions, NO_MENTIONS);
   // Mentions linked from here hide at once; fresh data from the index replaces the list (and
   // brings a mention back after Undo).
@@ -191,9 +196,13 @@ function UnlinkedMentions({ pageId, readOnly }: { pageId: string; readOnly: bool
   });
   const hidden = linked.data === mentions.data ? linked.keys : new Set<string>();
   const [busy, setBusy] = useState<string | null>(null);
-  const title = displayTitle(snapshot.get(pageId)?.title);
+  const title = displayTitle(usePagesSelector((pages) => pages.get(pageId)?.title));
   const visible = mentions.data.filter((mention) => !hidden.has(mentionKey(mention)));
   const groups = groupBySource(visible);
+  const sources = usePagesSelector(
+    (pages) => groups.map((group) => pages.get(group.sourcePageId)?.title),
+    sameItems,
+  );
   const link = async (mention: UnlinkedMention) => {
     const key = mentionKey(mention);
     setBusy(key);
@@ -234,8 +243,8 @@ function UnlinkedMentions({ pageId, readOnly }: { pageId: string; readOnly: bool
         />
       ) : (
         <ul className="flex flex-col gap-2">
-          {groups.map((group) => {
-            const source = displayTitle(snapshot.get(group.sourcePageId)?.title);
+          {groups.map((group, index) => {
+            const source = displayTitle(sources[index]);
             return (
               <li key={group.sourcePageId}>
                 <SourceHeader pageId={group.sourcePageId} />
@@ -306,11 +315,10 @@ function FooterToggle() {
 
 /** The backlinks side panel (`PANELS.backlinks`): linked references and unlinked mentions. */
 export default function BacklinksPanel({ pageId, page }: SidePanelProps) {
-  const snapshot = usePages();
+  const readOnly = usePagesSelector((pages) => !!pageId && pages.isTrashed(pageId));
   if (!pageId || !page) {
     return <EmptyState icon={<Link2 />} title={t('noPageOpen')} className="py-10" />;
   }
-  const readOnly = snapshot.isTrashed(pageId);
   return (
     <div className="flex min-h-full flex-col">
       <LinkedReferences key={`refs:${pageId}`} pageId={pageId} />

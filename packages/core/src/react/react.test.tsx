@@ -17,7 +17,9 @@ import {
   useOptionalAppContext,
   usePage,
   usePageDoc,
+  usePagesSelector,
   usePageTree,
+  sameItems,
   useSetting,
   useSyncStatus,
 } from './index';
@@ -64,6 +66,89 @@ describe('React bindings', () => {
     expect(screen.getByTestId('title')).toHaveTextContent('Renamed');
     expect(screen.getByTestId('roots')).toHaveTextContent('Parent,Second');
     await dispose();
+  });
+
+  it('re-renders a page or breadcrumbs only when they change', async () => {
+    const { ctx, wrapper, dispose } = await setup();
+    const parent = ctx.workspace.createPage({ title: 'Parent' });
+    const child = ctx.workspace.createPage({ title: 'Child', parentId: parent.id });
+    const renders = { page: 0, crumbs: 0 };
+    function Title() {
+      renders.page += 1;
+      return <span data-testid="title">{usePage(child.id)?.title}</span>;
+    }
+    function Crumbs() {
+      renders.crumbs += 1;
+      const ancestors = useAncestors(child.id);
+      return <span data-testid="crumbs">{ancestors.map((page) => page.title).join('/')}</span>;
+    }
+    render(
+      <>
+        <Title />
+        <Crumbs />
+      </>,
+      { wrapper },
+    );
+    expect(renders).toEqual({ page: 1, crumbs: 1 });
+
+    // Other pages come and go (an import adds thousands): nothing here changes.
+    act(() => {
+      const other = ctx.workspace.createPage({ title: 'Other' });
+      ctx.workspace.createPage({ title: 'Nested', parentId: other.id });
+      ctx.workspace.renamePage(other.id, 'Renamed other');
+    });
+    expect(renders).toEqual({ page: 1, crumbs: 1 });
+
+    act(() => ctx.workspace.renamePage(parent.id, 'Folder'));
+    expect(screen.getByTestId('crumbs')).toHaveTextContent('Folder');
+    expect(renders).toEqual({ page: 1, crumbs: 2 });
+
+    act(() => ctx.workspace.renamePage(child.id, 'Chapter'));
+    expect(screen.getByTestId('title')).toHaveTextContent('Chapter');
+    expect(renders).toEqual({ page: 2, crumbs: 2 });
+    await dispose();
+  });
+
+  it('selects from the pages, re-rendering when the selection changes', async () => {
+    const { ctx, wrapper, dispose } = await setup();
+    const page = ctx.workspace.createPage({ title: 'Launch plan' });
+    let renders = 0;
+    const { result } = renderHook(
+      () => {
+        renders += 1;
+        return {
+          trashed: usePagesSelector((pages) => pages.isTrashed(page.id)),
+          favorites: usePagesSelector((pages) => pages.favorites(), sameItems),
+        };
+      },
+      { wrapper },
+    );
+    expect(result.current).toEqual({ trashed: false, favorites: [] });
+    act(() => {
+      ctx.workspace.createPage({ title: 'Other' });
+      ctx.workspace.renamePage(page.id, 'Launch checklist');
+    });
+    expect(renders).toBe(1);
+
+    act(() => ctx.workspace.setFavorite(page.id, true));
+    expect(result.current.favorites.map((favorite) => favorite.title)).toEqual([
+      'Launch checklist',
+    ]);
+    expect(renders).toBe(2);
+    act(() => ctx.workspace.trashPage(page.id));
+    expect(result.current).toEqual({ trashed: true, favorites: [] });
+    expect(renders).toBe(3);
+    await dispose();
+  });
+
+  it('compares lists item by item', () => {
+    const page = { id: 'p' };
+    expect(sameItems([page, 1, 'a'], [page, 1, 'a'])).toBe(true);
+    expect(sameItems([], [])).toBe(true);
+    expect(sameItems([Number.NaN], [Number.NaN])).toBe(true);
+    expect(sameItems([page], [{ id: 'p' }])).toBe(false);
+    expect(sameItems([1, 2], [2, 1])).toBe(false);
+    expect(sameItems([1], [1, 2])).toBe(false);
   });
 
   it('holds doc leases while mounted', async () => {

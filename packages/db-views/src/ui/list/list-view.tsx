@@ -1,5 +1,5 @@
 import { resolveViewProperties, type ResolvedRow } from '@tessera/core';
-import { useAppContext, usePages } from '@tessera/core/react';
+import { useAppContext } from '@tessera/core/react';
 import { cn } from '@tessera/ui';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { FileText, Plus } from 'lucide-react';
@@ -27,7 +27,6 @@ const GROUP = 40;
  */
 export function ListView(props: ViewBodyProps) {
   const ctx = useAppContext();
-  const pages = usePages();
   const { snapshot, view, result, readOnly, queryCtx } = props;
   const scrollRef = useRef<HTMLDivElement>(null);
   const visibleProperties = resolveViewProperties(snapshot.properties, view)
@@ -102,12 +101,7 @@ export function ListView(props: ViewBodyProps) {
                   style={style}
                 >
                   {groupProperty ? (
-                    <GroupLabel
-                      group={item.group}
-                      property={groupProperty}
-                      queryCtx={queryCtx}
-                      pages={pages}
-                    />
+                    <GroupLabel group={item.group} property={groupProperty} queryCtx={queryCtx} />
                   ) : null}
                   <span className="text-xs text-fg-subtle tabular-nums">
                     {item.group.rows.length}

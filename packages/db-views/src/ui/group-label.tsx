@@ -1,4 +1,4 @@
-import type { PagesSnapshot, PropertyDefinition } from '@tessera/core';
+import type { PropertyDefinition } from '@tessera/core';
 import { Badge } from '@tessera/ui';
 import type { ReactNode } from 'react';
 import { t } from '../i18n';
@@ -13,7 +13,6 @@ export function groupName(
   group: Pick<RowGroup, 'key' | 'isEmpty' | 'option'>,
   property: PropertyDefinition,
   queryCtx: QueryContext,
-  pages: Pick<PagesSnapshot, 'get'>,
 ): string {
   if (group.isEmpty) return t('noValue', { property: property.name || t('untitled') });
   if (group.option) return group.option.name;
@@ -42,7 +41,7 @@ export function groupName(
     case 'relation':
       return group.key
         .split(',')
-        .map((id) => displayTitle(pages.get(id)?.title))
+        .map((id) => displayTitle(queryCtx.titleOf?.(id)))
         .join(', ');
     default:
       return group.key;
@@ -54,15 +53,13 @@ export function GroupLabel({
   group,
   property,
   queryCtx,
-  pages,
 }: {
   group: Pick<RowGroup, 'key' | 'isEmpty' | 'option'>;
   property: PropertyDefinition;
   queryCtx: QueryContext;
-  pages: Pick<PagesSnapshot, 'get'>;
 }): ReactNode {
   if (group.option) return <OptionBadge option={group.option} />;
-  const name = groupName(group, property, queryCtx, pages);
+  const name = groupName(group, property, queryCtx);
   if (group.isEmpty) return <span className="text-sm text-fg-muted">{name}</span>;
   if (property.type === 'checkbox')
     return <Badge tone={group.key === 'true' ? 'green' : 'gray'}>{name}</Badge>;
