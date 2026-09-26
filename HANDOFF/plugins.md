@@ -198,7 +198,10 @@ typechecked.
   may not ask for permissions its entry doesn't list. The default URL is
   `https://femboypuppy.github.io/Tessera-Notes/plugins/registry.json`: the repository's Pages site,
   which serves with `Access-Control-Allow-Origin: *`. Community listings go through pull requests
-  to `examples/plugins/registry.json` (documented in `docs/plugins/publishing.md`).
+  to `examples/plugins/registry.source.json` (documented in `docs/plugins/publishing.md`).
+  *Later:* the docs workflow generates and publishes the registry (every example built, every URL
+  from the site's address, a SHA-256 per zip, which the app requires for the default registry) and
+  checks it after each deploy (`build:registry`, `check:registry`).
 - **Dev mode polls** the dev server's `manifest.json` and entry every second and reinstalls on a
   hash change. There is no websocket and nothing to install on the author's side beyond the
   template's tiny static server. New permissions in a dev reload are prompted like an update.
@@ -295,9 +298,8 @@ None. Everything the plugin system needs was already in `packages/core`.
 
   Ask me (or read `packages/plugins/src/sandbox/sources.ts`) before tightening it.
 - **Agent 09 (CI):**
-  - Publish `examples/plugins/registry.json`, `registry.schema.json` and the example zips
-    (`pnpm --filter @tessera/plugins build:examples`, output in `examples/plugins/*/dist/*.zip`)
-    to GitHub Pages under `/plugins/`. The default registry URL points there.
+  - ~~Publish the registry, `registry.schema.json` and the example zips to GitHub Pages under
+    `/plugins/`.~~ Done: `.github/workflows/docs.yml` builds and checks them on every deploy.
   - Publish `@tessera/plugin-api` and `create-tessera-plugin` to npm. Both are `private` for now;
     `create-tessera-plugin` builds with `tsdown` to `dist/cli.js`.
   - Run `pnpm --filter @tessera/plugin-api docs:api` in the docs job, or rely on the test that

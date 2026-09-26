@@ -56,10 +56,11 @@ GitHub release downloads don't.
 ## Registries
 
 The **Browse** tab of Settings → Plugins lists the plugins of a registry: one `registry.json`
-file that anyone can host. The default registry is
-[`examples/plugins/registry.json`](https://github.com/femboypuppy/Tessera-Notes/blob/main/examples/plugins/registry.json) in the Tessera
-repository, published at `https://femboypuppy.github.io/Tessera-Notes/plugins/registry.json`. Users can
-switch to another registry with **Change registry**, next to the search box.
+file that anyone can host. The default registry is published with this site, at
+`https://femboypuppy.github.io/Tessera-Notes/plugins/registry.json`: every time the docs deploy,
+the example plugins are built, zipped and listed there with the SHA-256 of each zip, from
+[`examples/plugins/registry.source.json`](https://github.com/femboypuppy/Tessera-Notes/blob/main/examples/plugins/registry.source.json).
+Users can switch to another registry with **Change registry**, next to the search box.
 
 ```json
 {
@@ -107,7 +108,8 @@ the Browse tab (it says how many), so one broken entry never hides the others.
 
 ### What Tessera checks when installing from a registry
 
-- The download's SHA-256 matches `sha256`, when the entry has one.
+- The download's SHA-256 matches `sha256`, when the entry has one. Entries of the default
+  registry must have one: Tessera refuses to install one without it.
 - The manifest's `id` and `version` match the entry.
 - The manifest asks for **no permission the entry doesn't list**. A plugin can't show one list on
   its card and ask for more once downloaded.
@@ -135,5 +137,5 @@ simplest is a GitHub repository with GitHub Pages turned on: put `registry.json`
 it, push, and share `https://<you>.github.io/<repo>/registry.json`.
 
 To list a plugin in the default registry, open a pull request on the Tessera repository that adds
-its entry to `examples/plugins/registry.json`, with a `sha256`, a public source repository, and
-the smallest set of permissions the plugin needs.
+its complete entry to `community` in `examples/plugins/registry.source.json`, with a `sha256`,
+a public source repository, and the smallest set of permissions the plugin needs.

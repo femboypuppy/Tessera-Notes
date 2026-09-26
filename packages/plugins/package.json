@@ -18,7 +18,9 @@
     "test": "vitest run",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.examples.json",
     "lint": "eslint . --max-warnings 0",
-    "build:examples": "tsx scripts/build-examples.ts"
+    "build:examples": "tsx scripts/build-examples.ts",
+    "build:registry": "tsx scripts/build-registry.ts",
+    "check:registry": "tsx scripts/check-registry.ts"
   },
   "dependencies": {
     "@tessera/core": "workspace:*",
@@ -35,6 +37,7 @@
     "react-dom": "^19.0.0"
   },
   "devDependencies": {
+    "ajv": "8.20.0",
     "fake-indexeddb": "6.2.5",
     "fast-check": "4.10.2",
     "mermaid": "12.0.0",

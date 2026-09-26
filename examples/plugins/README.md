@@ -30,7 +30,10 @@ Outside this repository, each folder is a standalone project: `pnpm install`, `p
 
 ## The registry
 
-[`registry.json`](registry.json) lists these plugins in the [registry format](registry.schema.json).
-It is published with the example zips to
-`https://femboypuppy.github.io/Tessera-Notes/plugins/`, the default registry of Settings → Plugins →
-Browse. See [docs/plugins/publishing.md](../../docs/plugins/publishing.md) to list your own plugin.
+The docs workflow builds these plugins and publishes their zips with a `registry.json` (in the
+[registry format](registry.schema.json)) to `https://femboypuppy.github.io/Tessera-Notes/plugins/`,
+the default registry of Settings → Plugins → Browse. Nothing in it is written by hand: each entry
+comes from the plugin's `manifest.json`, its tags from [`registry.source.json`](registry.source.json),
+its download URL from where the site is published, and its `sha256` from the zip. To try it
+locally: `pnpm --filter @tessera/plugins build:registry --out <folder>`. See
+[docs/plugins/publishing.md](../../docs/plugins/publishing.md) to list your own plugin.

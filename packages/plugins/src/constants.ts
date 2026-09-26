@@ -10,13 +10,19 @@ export const PLUGINS_SETTINGS_PANEL_ID = 'plugins';
 export const APP_VERSION = '0.1.1';
 
 /**
- * The community registry read by Settings → Plugins → Browse, unless the user sets another one
- * (device setting {@link PLUGIN_SETTING_KEYS.registryUrl}). The repository publishes
- * `examples/plugins/registry.json` and the example zips to GitHub Pages, which serves them with
- * CORS headers (see HANDOFF/plugins.md).
+ * Where the default registry is published: the `plugins/` folder of the docs site (GitHub Pages,
+ * which serves every file with `Access-Control-Allow-Origin: *`). The docs workflow builds the
+ * example plugins and writes `registry.json`, `registry.schema.json` and the zips there
+ * (`pnpm --filter @tessera/plugins build:registry`). A test keeps it in step with the docs base
+ * path in `docs/.vitepress/config.mts`.
  */
-export const DEFAULT_REGISTRY_URL =
-  'https://femboypuppy.github.io/Tessera-Notes/plugins/registry.json';
+export const DEFAULT_REGISTRY_BASE = 'https://femboypuppy.github.io/Tessera-Notes/plugins/';
+
+/**
+ * The registry read by Settings → Plugins → Browse, unless the user sets another one (device
+ * setting {@link PLUGIN_SETTING_KEYS.registryUrl}).
+ */
+export const DEFAULT_REGISTRY_URL = `${DEFAULT_REGISTRY_BASE}registry.json`;
 
 /** Device settings owned by the plugins feature. */
 export const PLUGIN_SETTING_KEYS = {

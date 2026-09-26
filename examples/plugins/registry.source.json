@@ -1,0 +1,27 @@
+{
+  "$comment": "The default plugin registry, before publishing: the docs workflow builds each example and writes registry.json with its download URL and SHA-256 (packages/plugins/scripts/build-registry.ts). List a plugin published elsewhere under community, as a complete registry entry.",
+  "name": "Tessera example plugins",
+  "examples": [
+    {
+      "id": "word-count",
+      "tags": ["writing", "stats"]
+    },
+    {
+      "id": "daily-notes",
+      "tags": ["journal", "productivity"]
+    },
+    {
+      "id": "pomodoro",
+      "tags": ["focus", "productivity"]
+    },
+    {
+      "id": "random-page",
+      "tags": ["discovery"]
+    },
+    {
+      "id": "mermaid",
+      "tags": ["diagrams", "blocks"]
+    }
+  ],
+  "community": []
+}
