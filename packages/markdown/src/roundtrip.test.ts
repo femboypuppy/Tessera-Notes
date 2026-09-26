@@ -96,6 +96,21 @@ describe('round trips (property-based)', () => {
     PROPERTY_TIMEOUT,
   );
 
+  it('keeps a link GFM finds in looser text stable, instead of adding brackets on every save', () => {
+    // Found by the property above (seed 180555762): `+@.a` became `<+@.a>`, then `<<+@.a>>`…
+    // CommonMark doesn't read `<+@.a>` as a link, so such links are written `[text](url)`.
+    for (const source of ['+@.a', 'a@.b', '-@.a', 'x@a-.b', `${'a'.repeat(33)}:b`]) {
+      const once = codec.serialize(codec.parse(source).doc);
+      expect(codec.serialize(codec.parse(once).doc), source).toBe(once);
+    }
+    expect(codec.serialize(codec.parse('+@.a').doc)).toBe('[+@.a](mailto:+@.a)\n');
+    // Addresses and URLs CommonMark accepts keep the short form.
+    expect(codec.serialize(codec.parse('ada@example.com').doc)).toBe('<ada@example.com>\n');
+    expect(codec.serialize(codec.parse('<https://example.com/a>').doc)).toBe(
+      '<https://example.com/a>\n',
+    );
+  });
+
   it('round trips the kitchen-sink document', () => {
     const doc = kitchenSinkDoc();
     const titles: Record<string, string> = {

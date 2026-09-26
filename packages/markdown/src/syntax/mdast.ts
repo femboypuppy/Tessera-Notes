@@ -1,4 +1,4 @@
-import type { Parents, PhrasingContent } from 'mdast';
+import type { Link, Parents, PhrasingContent } from 'mdast';
 import type {
   CompileContext,
   Extension as FromMarkdownExtension,
@@ -13,6 +13,7 @@ import {
   type State,
   type Unsafe,
 } from 'mdast-util-to-markdown';
+import { toString } from 'mdast-util-to-string';
 import { classifyCharacter } from 'micromark-util-classify-character';
 import type {
   BlockIdMarker,
@@ -122,6 +123,40 @@ function withPeek(handle: Handle, peek: Handle): Handle {
 function inScope(state: State, name: ConstructName): boolean {
   return state.stack.includes(name);
 }
+
+/** A CommonMark email autolink's address: each domain label starts and ends with a letter or digit. */
+const AUTOLINK_EMAIL =
+  /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$/;
+/** A CommonMark URI autolink: a scheme of 2 to 32 characters, then no space, `<` or `>`. */
+const AUTOLINK_URI = /^[a-zA-Z][a-zA-Z0-9+.-]{1,31}:[^\s<>]*$/;
+
+/**
+ * Whether the default handler would write this link as `<…>` although CommonMark wouldn't read it
+ * back as a link. GFM links a looser text such as `a@.b` or `-@.a`; written as `<a@.b>`, it came
+ * back as text around a new link, one more pair of brackets on every save.
+ */
+function autolinkWouldBreak(node: Link): boolean {
+  const text = toString(node);
+  const email = node.url.startsWith('mailto:') && `mailto:${text}` === node.url;
+  if (node.title || !(email || text === node.url)) return false;
+  return email ? !AUTOLINK_EMAIL.test(text) : !AUTOLINK_URI.test(node.url);
+}
+
+/** Links; `[text](url)` where the `<url>` shortcut wouldn't survive a round trip. */
+const handleLink = withPeek(
+  (node: Link, parent, state, info) => {
+    if (!autolinkWouldBreak(node)) return defaultHandlers.link(node, parent, state, info);
+    const resourceLink = state.options.resourceLink;
+    state.options.resourceLink = true;
+    try {
+      return defaultHandlers.link(node, parent, state, info);
+    } finally {
+      state.options.resourceLink = resourceLink;
+    }
+  },
+  (node: Link, parent, state) =>
+    autolinkWouldBreak(node) ? '[' : (defaultHandlers.link.peek?.(node, parent, state) ?? '['),
+);
 
 const handleWikiLink = withPeek(
   (node: WikiLink, _parent, state) => {
@@ -297,6 +332,7 @@ export function tesseraToMarkdown(): ToMarkdownExtension {
   return {
     unsafe,
     handlers: {
+      link: handleLink,
       wikiLink: handleWikiLink,
       tag: handleTag,
       blockId: handleBlockId,
