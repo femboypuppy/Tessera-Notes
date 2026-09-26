@@ -32,6 +32,7 @@ import {
   errorSchema,
   logSchema,
   resizeSchema,
+  unresponsiveSchema,
   workerReadySchema,
   type ApiParams,
   type NotifyMethod,
@@ -316,6 +317,10 @@ export class PluginInstance {
     if (!current()) return;
     this.setStatus('running');
     this.log('info', `${plugin.manifest.name} ${plugin.manifest.version} started.`);
+    // Panel and block code is instrumented before it runs, once per version: start now, so the
+    // first one opens without waiting (large plugins take seconds).
+    if (this.declared.panels.length || this.declared.blocks.length)
+      this.deps.sandboxes.prepareUi?.(code.code, { slot: plugin.id, hash: plugin.hash });
   }
 
   private startHeartbeat(generation: number): void {
@@ -771,6 +776,7 @@ export class PluginInstance {
         container: options.container,
         title: options.title,
         code: code.code,
+        cacheKey: { slot: plugin.id, hash: plugin.hash },
         network: networkSources(plugin.granted),
         init: { ...init, surface: applyPatch(surface, pending), fonts },
         onControl: (message) => {
@@ -793,6 +799,12 @@ export class PluginInstance {
       sandbox = created;
       this.uiSandboxes.add(created);
       pending = {};
+      /** Closes the frame of a surface that stopped responding, and says so in its place. */
+      const close = (why: string) => {
+        this.log('error', `A ${surface.kind} ${why} and was closed.`, { surface: surface.kind });
+        callbacks.onError(t('errUnresponsive', { plugin: plugin.manifest.name }));
+        controller.destroy();
+      };
       connection = this.connect(created.port, surface.kind, callbacks, (method, params) => {
         if (method === 'rendered') callbacks.onReady();
         else if (method === 'resize') {
@@ -806,6 +818,11 @@ export class PluginInstance {
             source: 'plugin',
           });
           if (parsed.data.fatal) callbacks.onError(parsed.data.message);
+        } else if (method === 'unresponsive') {
+          // The frame's guard stopped code that ran too long without a break (`instrument.ts`).
+          const parsed = unresponsiveSchema.safeParse(params);
+          const seconds = parsed.success ? ` for ${(parsed.data.ms / 1000).toFixed(1)} s` : '';
+          close(`ran without a break${seconds}`);
         }
       });
       const beat = async () => {
@@ -815,11 +832,7 @@ export class PluginInstance {
           await current.endpoint.request('ping', undefined, PLUGIN_TIMINGS.heartbeatTimeoutMs);
         } catch {
           if (destroyed || connection !== current) return;
-          this.log('error', `A ${surface.kind} stopped responding and was closed.`, {
-            surface: surface.kind,
-          });
-          callbacks.onError(t('errUnresponsive', { plugin: plugin.manifest.name }));
-          controller.destroy();
+          close('stopped responding');
           return;
         }
         heartbeat = setTimeout(() => void beat(), PLUGIN_TIMINGS.heartbeatIntervalMs * 2);

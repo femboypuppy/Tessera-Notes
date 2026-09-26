@@ -145,6 +145,8 @@ export function createInProcessSandboxes(modules: Map<string, PluginDefinition |
           console: quietConsole(record.logs),
           ResizeObserver: globalThis.ResizeObserver,
           FontFace: FakeFontFace as unknown as typeof FontFace,
+          performance: globalThis.performance,
+          MessageChannel: globalThis.MessageChannel,
         },
         createRuntimeKit(),
       );

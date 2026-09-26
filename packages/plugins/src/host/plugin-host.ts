@@ -160,6 +160,7 @@ export class PluginHost {
           this.instances.delete(change.id);
         }
         this.options.console.clear(change.id);
+        this.options.sandboxes.forget?.(change.id);
         break;
       case 'settings':
         instance?.pushSettings();

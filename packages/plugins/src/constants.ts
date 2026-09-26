@@ -92,6 +92,11 @@ export const PLUGIN_TIMINGS = {
   heartbeatIntervalMs: 1_000,
   /** A plugin that hasn't answered a ping for this long is stopped. */
   heartbeatTimeoutMs: 4_000,
+  /**
+   * How long code in a panel or block frame may run without a break. Those frames share the app's
+   * main thread in some browsers, so their code is stopped after this (`sandbox/instrument.ts`).
+   */
+  frameRunLimitMs: 2_000,
   /** How long a sandbox may take to load the plugin and say it's ready. */
   startTimeoutMs: 20_000,
   /** How long `activate` and `deactivate` may take. */

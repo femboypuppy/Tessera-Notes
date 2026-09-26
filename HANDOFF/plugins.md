@@ -78,6 +78,9 @@ small).
   - `bootstraps.ts`: the worker frame, the outer UI frame and the inner UI frame.
   - `sources.ts`: the documents and the CSP.
   - `frames.ts`: `domSandboxFactory`.
+  - `instrument.ts` (run by `instrument.worker.ts`) and `prepare.ts`: panel and block code is
+    instrumented so a loop can be stopped, once per plugin version, and kept in IndexedDB
+    (`tessera-plugin-prepared-code`). The frame's side is `installGuard` in `runtime-kit.ts`.
 - `src/host/`:
   - `plugin-host.ts`: one per workspace session. It starts the enabled plugins, forwards page,
     storage, settings and theme events, and runs dev watchers.
@@ -120,10 +123,10 @@ typechecked.
 
 - `plugins.spec.ts`, 6 journeys: registry install and panel; Mermaid block; revoking a permission;
   zip install and uninstall; dev-mode live reload; URL refusals.
-- `sandbox.spec.ts`: frame isolation and CSP checked from the host, and the infinite-loop
-  watchdog.
-- `plugins.screenshots.ts`, plus fixtures (a plugin that loops forever in a command, and a
-  live-reload plugin).
+- `sandbox.spec.ts`: frame isolation and CSP checked from the host, the infinite-loop watchdog
+  (a command, a panel, a block), and a hostile plugin probing from inside.
+- `plugins.screenshots.ts`, plus fixtures (plugins that loop forever in a command, and in a panel
+  and a block; a hostile plugin; a live-reload plugin).
 
 ## How it plugs in (FeatureModule entries, services, extension points used)
 
@@ -177,6 +180,22 @@ typechecked.
   - Plugin code that loops forever **in a UI frame** freezes the app in Firefox and headless
     Chromium (same process); headful Chromium isolates sandboxed frames in their own process and
     stays responsive.
+- **Panel and block code is instrumented, so a loop there can be stopped (issue #6).** UI frames
+  share the app's thread in Firefox and headless Chromium, and nothing outside a frame can stop
+  its code there; a cross-site frame origin isn't available to a self-hosted or desktop app, and
+  rendering from the worker would break every plugin that measures or draws. So before a UI frame
+  runs, the host parses the plugin's module (acorn, in a worker) and adds a call to a guard at the
+  top of the module, of every function body (`(guard(), expression)` for expression arrows) and
+  of every loop body. The guard (`installGuard`) throws once the code has run for
+  `PLUGIN_TIMINGS.frameRunLimitMs` (2 s) without the event loop turning (a `MessageChannel`
+  message it posts marks the turn), keeps throwing after that so the code unwinds, and tells the
+  host (`unresponsive`), which closes the frame. Its name is one no identifier of the code uses,
+  and it's defined non-writable and non-configurable before the module loads. Its first call adds
+  `script-src 'none'` to the frame's policy, so no code the host didn't check can load afterwards
+  (a blob script or `import()`); the lock's element is removed at once, the policy stays in force.
+  Parsing Mermaid takes 2–5 s, so code is prepared in the background when a plugin with panels or
+  blocks starts, once per version, and kept in IndexedDB. What it can't stop: one long call into
+  the browser (a regular expression that backtracks for minutes).
 - **Sandbox code ships as source text** (`Function.prototype.toString()`), so the runtime needs no
   separate build step and no URL. Every shipped function is tested for self-containment in a fresh
   `vm` realm. The module loader stays a string (`LOAD_MODULE_SOURCE`), because Vite dev rewrites
@@ -228,6 +247,8 @@ typechecked.
   getting-started guide's code found this.
 - **Dependencies** (exact versions):
   - `packages/plugins`:
+    - `acorn` 8.18.0: parses panel and block code to instrument it; MIT, already in the
+      workspace (ESLint's parser), loaded only in the instrumenting worker.
     - `fflate` 0.8.3: zip read and write; small, MIT.
     - `react-router` 8.4.0: `useSearchParams` for deep links such as
       `/settings/plugins?plugin=<id>`. It is already the app's router.
@@ -259,10 +280,9 @@ None. Everything the plugin system needs was already in `packages/core`.
     both browsers.
   - Follow-up: an in-sandbox probe fixture for the e2e suite (Agent 09's security review is a
     good owner).
-- **A loop in a panel or block frame freezes the app** in Firefox and headless Chromium (UI frames
-  run on the app's main thread there). Worker loops, which are where plugin logic runs, are
-  detected and stopped in both browsers (e2e). This is documented with the evidence in
-  `docs/plugins/permissions.md` › Limits.
+- **One long call into the browser from a panel or block holds the app** in Firefox and headless
+  Chromium until it returns (a runaway regular expression, say). Loops, recursion and promise
+  chains are stopped after 2 s (see Decisions); `docs/plugins/permissions.md` › Limits says so.
 - **The editor slash-menu path is untested end to end on this branch.** The editor isn't merged,
   so the Mermaid e2e inserts the block through the details page's preview. The preview uses the
   same slash-menu item `create()` and the same `plugin:` renderer. The e2e tests switch to the

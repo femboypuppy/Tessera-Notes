@@ -251,6 +251,9 @@ export async function expectNoEscape(page: Page, context: BrowserContext): Promi
       'panel: localStorage',
       'panel: eval',
       'panel: read the CSP nonce it runs under',
+      'panel: run a script it made itself',
+      'panel: import a module it made itself',
+      'panel: switch off the loop guard',
     ]),
   );
   expect(results.length).toBeGreaterThanOrEqual(20);
