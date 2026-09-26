@@ -708,10 +708,17 @@ Implementations: `MemorySettingsStore`, `LocalStorageSettingsStore` (cross-tab),
 ### 6.6 React bindings (`@tessera/core/react`)
 
 `AppContextProvider`, `useAppContext`, `useOptionalAppContext`, `usePages` (the reactive page
-index), `usePage(id)`, `usePageTree`, `useAncestors(id)`, `usePageDoc(id)`, `useDatabaseDoc(id)`,
-`useSyncStatus(syncHandle)`, `useEvent(type, handler)`, `useCommands`, `useContributions(kind)`,
+index), `usePagesSelector(select, isEqual?)`, `sameItems`, `usePage(id)`, `usePageTree`,
+`useAncestors(id)`, `usePageDoc(id)`, `useDatabaseDoc(id)`, `useSyncStatus(syncHandle)`,
+`useEvent(type, handler)`, `useCommands`, `useContributions(kind)`,
 `useSetting(store, key, fallback)`, `useCurrentUser`. Never mirror document content into React
 state: read it from Yjs in effects or through TipTap.
+
+`usePages` and `usePageTree` re-render on every page change, and an import makes thousands. A
+component that shows a few pages selects them: `usePagesSelector` re-renders only when its
+selection changes (`Object.is`, or `isEqual`, such as `sameItems` for lists). Page objects keep
+their identity while unchanged, so `usePage(id)` and `useAncestors(id)` re-render only when their
+pages change. Handlers read `ctx.workspace.pages.getSnapshot()` when they run.
 
 ### 6.7 Testing helpers (`@tessera/core/testing`)
 
