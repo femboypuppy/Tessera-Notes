@@ -2,7 +2,7 @@
   "id": "my-plugin",
   "name": "My plugin",
   "version": "0.1.0",
-  "apiVersion": 1,
+  "apiVersion": 2,
   "author": "Your name",
   "description": "Says hello, and shows the page you are on in a side panel.",
   "entry": "main.js",

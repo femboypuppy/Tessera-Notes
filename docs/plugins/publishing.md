@@ -1,16 +1,18 @@
 # Publishing a plugin
 
-A Tessera plugin is a folder, or a `.zip` of it, with three files:
+A Tessera plugin is a folder, or a `.zip` of it, with these files:
 
 | File | Required | What it is |
 | --- | --- | --- |
 | `manifest.json` | Yes | ID, name, version, API version, author, description, entry and permissions. |
 | `main.js` (the manifest's `entry`) | Yes | One ES module whose default export is `definePlugin({ … })`, with its dependencies bundled in. |
+| `renderer.js` (the manifest's `renderer`) | No | One ES module whose default export is `defineRenderer({ … })`: see [Heavy libraries](#heavy-libraries-a-renderer). |
 | `README.md` | No | Shown on the plugin's **About** tab in Settings → Plugins. |
 
 `pnpm pack` in a project made with `create-tessera-plugin` builds exactly that into
 `<id>-<version>.zip`. The manifest may sit at the root of the zip or inside one top-level
-folder. Limits: 32 MB zipped, 64 MB and 500 files unzipped, 24 MB for the entry.
+folder. Limits: 32 MB zipped, 64 MB and 500 files unzipped, 24 MB for the entry and for the
+renderer.
 
 ## The manifest
 
@@ -19,7 +21,7 @@ folder. Limits: 32 MB zipped, 64 MB and 500 files unzipped, 24 MB for the entry.
   "id": "word-count",
   "name": "Word count",
   "version": "1.0.0",
-  "apiVersion": 1,
+  "apiVersion": 2,
   "author": "Tessera",
   "description": "Words, characters and reading time of the page you are on.",
   "entry": "main.js",
@@ -35,13 +37,46 @@ folder. Limits: 32 MB zipped, 64 MB and 500 files unzipped, 24 MB for the entry.
 | `id` | 2–64 characters: lowercase words separated by `-` or `.` (`word-count`, `com.example.timer`). Never change it: it's how Tessera recognizes updates and keeps the plugin's storage. |
 | `name` | Up to 60 characters. |
 | `version` | Semver (`1.2.3`). Bump it for every release. |
-| `apiVersion` | The plugin API version you built against (`PLUGIN_API_VERSION` in the SDK, currently `1`). Tessera refuses plugins that need a newer API and keeps older ones working. |
+| `apiVersion` | The plugin API version you built against (`PLUGIN_API_VERSION` in the SDK, currently `2`). Tessera refuses plugins that need a newer API and keeps older ones working. Tessera 0.1 runs version `1`: a plugin without a renderer may declare `1` to run there too. |
 | `author`, `description` | Up to 100 and 500 characters. |
 | `entry` | A path inside the bundle, usually `main.js`. |
+| `renderer` | Optional: the path of the renderer module, usually `renderer.js`. Needs `apiVersion` 2. |
 | `permissions` | What the plugin needs; see [Permissions and security](./permissions.md). Ask for as little as you can: users see this list before installing. |
 | `icon` | Optional: one emoji. |
 | `homepage`, `repository` | Optional HTTPS URLs, shown on the About tab. |
 | `minAppVersion` | Optional: the oldest Tessera version the plugin works with. |
+
+## Heavy libraries: a renderer
+
+Each panel and block runs in its own frame, which loads the plugin's `main.js`. A library that
+draws (diagrams, charts, math) can be large: bundled into `main.js`, it would load again in
+every block of every page. Put it in a **renderer** instead: a second module that Tessera loads
+once, in one hidden frame shared by all of the plugin's panels and blocks.
+
+`	s
+// src/renderer.ts, built into renderer.js
+import { defineRenderer } from '@tessera/plugin-api';
+import { drawChart } from 'some-chart-library';
+
+export default defineRenderer({
+  chart: (input: { values: number[]; width: number }) => ({ svg: drawChart(input) }),
+});
+`
+
+`	s
+// in a block (main.js)
+const { svg } = await ctx.api.ui.render<{ svg: string }>('chart', {
+  values,
+  width: ctx.root.clientWidth,
+});
+`
+
+Name the module in the manifest (`"renderer": "renderer.js"`, with `"apiVersion": 2`) and build
+it as its own single file. Render functions take JSON and return JSON, and get no `api`: pass
+them what they need. Their frame has the page's DOM, styled with the app's theme and fonts, so
+text measures as it will show; it opens on the first call and closes after two minutes without
+one. The [Mermaid example](https://github.com/femboypuppy/Tessera-Notes/tree/main/examples/plugins/mermaid)
+builds its `main.js` (9 KB) and `renderer.js` (Mermaid, 5 MB) this way.
 
 ## Sharing a plugin directly
 
@@ -76,7 +111,7 @@ Users can switch to another registry with **Change registry**, next to the searc
       "description": "Words, characters and reading time of the page you are on.",
       "repo": "https://github.com/you/word-count",
       "version": "1.0.0",
-      "apiVersion": 1,
+      "apiVersion": 2,
       "download": "https://you.github.io/plugins/word-count-1.0.0.zip",
       "sha256": "9f2c…64 hex characters…",
       "permissions": ["pages:read", "ui:panels"],

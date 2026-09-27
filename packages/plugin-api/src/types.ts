@@ -504,7 +504,31 @@ export interface UiApi {
   addBlock(block: BlockOptions): Unsubscribe;
   /** Shows a notification. No permission needed (at most 5 every 10 seconds). */
   notify(options: string | NotifyOptions): Promise<void>;
+  /**
+   * Runs one of the plugin's render functions (see {@link defineRenderer}) and returns its result.
+   * They run in one hidden frame per plugin, shared by all its panels and blocks, so a heavy
+   * library loads once instead of in every block. Input and result are JSON (at most 4 million
+   * characters). Needs a `renderer` in the manifest; no permission needed.
+   *
+   * @example
+   * const { svg } = await ctx.api.ui.render<{ svg: string }>('diagram', { code: 'graph TD; A-->B' });
+   */
+  render<T extends JsonValue = JsonValue>(name: string, input?: JsonValue): Promise<T>;
 }
+
+/**
+ * A render function: turns JSON input into a JSON result, with the DOM of the plugin's hidden
+ * renderer frame (styled with the app's theme and fonts, so text measures as it will show). It
+ * gets no `api`: pass what it needs in `input`.
+ */
+export type RenderFunction<I extends JsonValue = JsonValue, O extends JsonValue = JsonValue> = (
+  input: I,
+) => O | Promise<O>;
+
+/** Render functions by name: what {@link defineRenderer} takes. */
+export type RenderFunctions = {
+  readonly [name: string]: RenderFunction<never, JsonValue>;
+};
 
 // ---------------------------------------------------------------------------------------------
 // The API object

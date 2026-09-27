@@ -25,6 +25,9 @@ describe('pluginManifestSchema', () => {
       id: 'com.example.word-count',
       permissions: valid.permissions,
     });
+    expect(pluginManifestSchema.parse({ ...valid, renderer: 'dist/renderer.js' })).toMatchObject({
+      renderer: 'dist/renderer.js',
+    });
   });
 
   it.each([
@@ -35,6 +38,8 @@ describe('pluginManifestSchema', () => {
     ['absolute entry', { entry: '/main.js' }],
     ['entry escaping the bundle', { entry: '../main.js' }],
     ['entry with a scheme', { entry: 'https://evil.example/main.js' }],
+    ['renderer escaping the bundle', { renderer: '../renderer.js' }],
+    ['renderer with a scheme', { renderer: 'data:text/javascript,1' }],
     ['unknown permission', { permissions: ['pages:delete'] }],
     ['network permission with scheme', { permissions: ['network:https://api.example.com'] }],
     ['network permission with path', { permissions: ['network:api.example.com/v1'] }],

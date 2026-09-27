@@ -1,9 +1,11 @@
 // @vitest-environment jsdom
+import { defineRenderer } from '@tessera/plugin-api';
 import { createTestHarness } from '@tessera/plugin-api/testing';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { readCode, type DiagramData } from './block';
 import plugin from './main';
 import type * as RenderModule from './render';
+import renderer from './renderer';
 import { DEFAULT_CODE, TEMPLATES } from './templates';
 
 // jsdom can't lay out SVG, so the real mermaid renderer is replaced; its theme mapping is tested
@@ -34,7 +36,7 @@ const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 describe('Mermaid plugin', () => {
   it('adds the diagram block to the slash menu with a starting diagram', async () => {
-    const harness = createTestHarness(plugin, { permissions: ['ui:blocks'] });
+    const harness = createTestHarness(plugin, { permissions: ['ui:blocks'], renderer });
     await harness.activate();
     expect(harness.blocks).toEqual([
       expect.objectContaining({
@@ -47,7 +49,7 @@ describe('Mermaid plugin', () => {
   });
 
   it('renders the diagram in the current theme and re-renders when the theme changes', async () => {
-    const harness = createTestHarness(plugin);
+    const harness = createTestHarness(plugin, { renderer });
     const block = await harness.renderBlock<DiagramData>('diagram', {
       data: { code: 'graph TD\n  A-->B' },
     });
@@ -63,7 +65,7 @@ describe('Mermaid plugin', () => {
   });
 
   it('edits with a live preview, saves, and closes with Mod+Enter', async () => {
-    const harness = createTestHarness(plugin);
+    const harness = createTestHarness(plugin, { renderer });
     const block = await harness.renderBlock<DiagramData>('diagram', {
       data: { code: 'graph TD\n  A-->B' },
     });
@@ -88,7 +90,7 @@ describe('Mermaid plugin', () => {
   });
 
   it('shows syntax errors while editing and keeps the last good diagram', async () => {
-    const harness = createTestHarness(plugin);
+    const harness = createTestHarness(plugin, { renderer });
     const block = await harness.renderBlock<DiagramData>('diagram', { data: { code: 'graph TD' } });
     await settle();
     block.root.querySelector<HTMLButtonElement>('[aria-label="Edit diagram"]')?.click();
@@ -102,8 +104,35 @@ describe('Mermaid plugin', () => {
     expect(block.root.querySelector('.mm-preview')?.hasAttribute('data-stale')).toBe(true);
   });
 
+  it('draws through the plugin’s renderer, with the theme and the block’s width', async () => {
+    const harness = createTestHarness(plugin, { renderer, theme: { mode: 'dark' } });
+    await harness.renderBlock<DiagramData>('diagram', { data: { code: 'graph TD' } });
+    await settle();
+    expect(renderDiagram).toHaveBeenCalledWith(
+      'graph TD',
+      expect.objectContaining({ mode: 'dark' }),
+      document,
+      // jsdom lays nothing out; in Tessera this is the block's width.
+      0,
+    );
+  });
+
+  it('shows in its place why the renderer couldn’t draw', async () => {
+    const failing = defineRenderer({
+      diagram: () => {
+        throw new Error('Mermaid diagrams’s renderer stopped responding and was closed.');
+      },
+    });
+    const harness = createTestHarness(plugin, { renderer: failing });
+    const block = await harness.renderBlock<DiagramData>('diagram', { data: { code: 'graph TD' } });
+    await settle();
+    expect(block.root.querySelector('.mm-error')?.textContent).toBe(
+      '⚠ Mermaid diagrams’s renderer stopped responding and was closed.',
+    );
+  });
+
   it('offers templates for an empty block and inserts one', async () => {
-    const harness = createTestHarness(plugin);
+    const harness = createTestHarness(plugin, { renderer });
     const block = await harness.renderBlock<DiagramData>('diagram', { data: null });
     const chips = [...block.root.querySelectorAll<HTMLButtonElement>('.mm-chips button')];
     expect(chips.map((chip) => chip.textContent)).toEqual(
@@ -116,7 +145,7 @@ describe('Mermaid plugin', () => {
   });
 
   it('is view-only when the block is read-only, and follows data changed elsewhere', async () => {
-    const harness = createTestHarness(plugin);
+    const harness = createTestHarness(plugin, { renderer });
     const block = await harness.renderBlock<DiagramData>('diagram', {
       data: { code: 'graph LR' },
       readOnly: true,

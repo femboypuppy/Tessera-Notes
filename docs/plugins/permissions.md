@@ -39,6 +39,9 @@ Plugin code never runs in the app. Each plugin gets:
 - **A hidden, sandboxed frame running a Worker** for `activate`, commands and everything that
   isn't UI.
 - **One sandboxed frame per open panel or block**, for the UI the plugin draws.
+- **One hidden, sandboxed frame for its renderer**, if it has one (`renderer` in the manifest):
+  heavy drawing code that its panels and blocks share. It opens on the first `api.ui.render`
+  call, gets no API (only JSON in and out), and closes after two minutes without calls.
 
 Every frame is an `iframe` with `sandbox="allow-scripts"` and never `allow-same-origin`. It has an
 opaque origin, so it can't reach the app's page, cookies, `localStorage`, IndexedDB or any other
@@ -69,8 +72,8 @@ the inner frame that does. The outer frame's `frame-src 'none'` blocks every nav
 inner frame. Without it, a plugin could navigate its own frame to a URL with your data in it,
 which a CSP alone can't prevent. If a plugin tries, Tessera stops it and says so in its console.
 
-Panels and blocks need the page's DOM, so their code can't run in a worker, and Firefox and
-Chromium without site isolation run their frames on the app's own thread. Nothing outside such a
+Panels, blocks and renderers need the page's DOM, so their code can't run in a worker, and
+Firefox and Chromium without site isolation run their frames on the app's own thread. Nothing outside such a
 frame can interrupt it, so Tessera checks the code before it runs: it rewrites the plugin's
 module so that every function and every loop iteration first asks the frame whether the code has
 run too long without a break. The first check, at the top of the module, adds `script-src 'none'`
@@ -113,7 +116,8 @@ app's documents.
 - **A panel or block stuck in a loop** (or in endless recursion, or in a promise chain that never
   ends) is stopped by its frame after two seconds without a break. The app waits at most that
   long, the panel or block says the plugin stopped responding and offers **Reload**, and the rest
-  of the plugin keeps running.
+  of the plugin keeps running. A renderer that does the same is closed: the calls waiting for it
+  fail with a message saying so, and the next call opens a new one.
 - **Startup is time-limited**: a plugin has 20 seconds to load and 20 seconds for `activate`.
 - **Uninstalling** stops the plugin, removes everything it registered, and deletes its storage.
 
@@ -133,8 +137,8 @@ The sandbox is strong, but it isn't magic. What it doesn't do:
 - **Granted data is the plugin's to use.** A plugin with `pages:read` sees your pages, and with a
   `network:` permission it can send them to that domain. Permissions limit what a plugin can
   reach, not what it does with what it can reach.
-- **CPU and memory aren't capped** beyond the heartbeat and the two-second limit for panels and
-  blocks. If a plugin slows Tessera down, turn it off in Settings → Plugins.
+- **CPU and memory aren't capped** beyond the heartbeat and the two-second limit for panels,
+  blocks and renderers. If a plugin slows Tessera down, turn it off in Settings → Plugins.
 
 ## How this is tested
 

@@ -12,7 +12,7 @@ import { runWorker } from '../sandbox/runtime-worker';
 
 /** A sandbox created by {@link createInProcessSandboxes}, for assertions. */
 export interface FakeSandbox {
-  kind: 'worker' | 'ui';
+  kind: 'worker' | 'ui' | 'renderer';
   code: string;
   network: string[];
   destroyed: boolean;
@@ -66,7 +66,7 @@ export function createInProcessSandboxes(modules: Map<string, PluginDefinition |
     return value && typeof value === 'object' && 'default' in value ? value : { default: value };
   };
 
-  const connect = (kind: 'worker' | 'ui', options: WorkerSandboxOptions | UiSandboxOptions) => {
+  const connect = (kind: FakeSandbox['kind'], options: WorkerSandboxOptions | UiSandboxOptions) => {
     const channel = new MessageChannel();
     const record: FakeSandbox = {
       kind,
@@ -130,7 +130,7 @@ export function createInProcessSandboxes(modules: Map<string, PluginDefinition |
       return sandbox;
     },
     async createUi(options) {
-      const { record, runtimePort, sandbox } = connect('ui', options);
+      const { record, runtimePort, sandbox } = connect(options.kind ?? 'ui', options);
       const doc = document.implementation.createHTMLDocument('plugin frame');
       record.document = doc;
       options.container.append(sandbox.frame);

@@ -26,6 +26,7 @@ Everything below is exported from `@tessera/plugin-api`, except the test harness
 - [The api object](#the-api-object)
 - [Commands](#commands)
 - [Panels, blocks and notifications](#panels-blocks-and-notifications)
+- [Renderers](#renderers)
 - [Pages](#pages)
 - [Databases](#databases)
 - [Storage](#storage)
@@ -389,6 +390,23 @@ Shows a notification. No permission needed (at most 5 every 10 seconds).
 notify(options: string | NotifyOptions): Promise<void>
 ```
 
+<a id="api-ui-render"></a>
+
+#### `api.ui.render`
+
+Runs one of the plugin's render functions (see [`defineRenderer`](#definerenderer)) and returns its result.
+They run in one hidden frame per plugin, shared by all its panels and blocks, so a heavy
+library loads once instead of in every block. Input and result are JSON (at most 4 million
+characters). Needs a `renderer` in the manifest; no permission needed.
+
+```ts
+render<T extends JsonValue = JsonValue>(name: string, input?: JsonValue): Promise<T>
+```
+
+```ts
+const { svg } = await ctx.api.ui.render<{ svg: string }>('diagram', { code: 'graph TD; A-->B' });
+```
+
 ### PanelOptions
 
 A side panel. Its content comes from `panels[id]` in [`PluginDefinition`](#plugindefinition).
@@ -432,6 +450,81 @@ interface NotifyOptions {
   description?: string;
   variant?: 'default' | 'success' | 'warning' | 'error';
 }
+```
+
+## Renderers
+
+Plugin API 2. Heavy drawing code (a diagram or chart library) goes in a second module, named by `renderer` in the manifest. It loads once, in a hidden frame shared by the plugin’s panels and blocks, which call it with `api.ui.render`.
+
+### defineRenderer
+
+Defines a plugin's renderer: the default export of the module the manifest names as
+`renderer` (plugin API 2). Put heavy drawing code there, such as a diagram or chart library:
+Tessera loads it once, in a hidden frame, when a panel or block first calls
+`api.ui.render(name, input)`, and closes the frame after two minutes without calls. Keep the
+library out of the main module, so panels and blocks stay light.
+
+```ts
+function defineRenderer<const R extends RenderFunctions>(renderers: R): DefinedRenderer<R>
+```
+
+```ts
+// renderer.ts, built into renderer.js next to main.js
+export default defineRenderer({
+  async diagram(input: { code: string }) {
+    const { svg } = await library.render(input.code);
+    return { svg };
+  },
+});
+```
+
+### RenderFunction
+
+A render function: turns JSON input into a JSON result, with the DOM of the plugin's hidden
+renderer frame (styled with the app's theme and fonts, so text measures as it will show). It
+gets no `api`: pass what it needs in `input`.
+
+```ts
+type RenderFunction<I extends JsonValue = JsonValue, O extends JsonValue = JsonValue> = (
+  input: I,
+) => O | Promise<O>;
+```
+
+### RenderFunctions
+
+Render functions by name: what [`defineRenderer`](#definerenderer) takes.
+
+```ts
+type RenderFunctions = {
+  readonly [name: string]: RenderFunction<never, JsonValue>;
+};
+```
+
+### DefinedRenderer
+
+What [`defineRenderer`](#definerenderer) returns: the render functions, marked for the host.
+
+```ts
+interface DefinedRenderer<R extends RenderFunctions = RenderFunctions> {
+  readonly [RENDERER_DEFINITION_MARKER]: 1;
+  readonly renderers: R;
+}
+```
+
+### isRendererDefinition
+
+True when `value` looks like a renderer module's `defineRenderer` export.
+
+```ts
+function isRendererDefinition(value: unknown): value is DefinedRenderer
+```
+
+### RENDERER_DEFINITION_MARKER
+
+Marks a renderer module's default export, so the host can recognize it.
+
+```ts
+const RENDERER_DEFINITION_MARKER = '__tesseraRenderer';
 ```
 
 ## Pages
@@ -1241,10 +1334,11 @@ function isPluginErrorCode(value: unknown): value is PluginErrorCode
 ### PLUGIN_API_VERSION
 
 Version of the plugin API described by this SDK. Put it in your manifest as `apiVersion`. The
-host refuses plugins built for a newer API and keeps older versions working.
+host refuses plugins built for a newer API and keeps older versions working. Version 2 added
+renderers ([`defineRenderer`](#definerenderer), `api.ui.render`); Tessera 0.1 runs version 1.
 
 ```ts
-const PLUGIN_API_VERSION = 1;
+const PLUGIN_API_VERSION = 2;
 ```
 
 ### PLUGIN_PERMISSIONS
@@ -1366,6 +1460,8 @@ interface TestHarnessOptions {
   currentPageId?: string | null;
   theme?: Partial<ThemeInfo>;
   plugin?: { id?: string; name?: string; version?: string };
+  /** The plugin's renderer module (its `defineRenderer` export), for `api.ui.render`. */
+  renderer?: DefinedRenderer;
   /** The clock for timestamps. Default `Date.now`. */
   now?: () => number;
 }

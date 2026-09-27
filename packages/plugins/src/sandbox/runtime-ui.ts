@@ -7,7 +7,7 @@ import type {
 } from '@tessera/plugin-api';
 import type { RuntimeInit, RuntimeKit, RuntimePort } from './runtime-kit';
 
-/** The surface a UI frame renders. */
+/** The panel or block a UI frame renders. */
 export type UiSurfaceInit =
   | { kind: 'panel'; id: string; pageId: string | null }
   | {
@@ -19,6 +19,9 @@ export type UiSurfaceInit =
       readOnly: boolean;
       selected: boolean;
     };
+
+/** What a UI frame is for: a panel or block, or (hidden) the plugin's shared renderer. */
+export type UiFrameSurface = UiSurfaceInit | { kind: 'renderer' };
 
 /** A font the host passes to the frame (the sandbox can't load the app's font files itself). */
 export interface UiFont {
@@ -35,7 +38,7 @@ export interface UiGuardInit {
 
 /** What the host sends to a panel or block frame. */
 export interface UiInit extends RuntimeInit {
-  surface: UiSurfaceInit;
+  surface: UiFrameSurface;
   fonts: UiFont[];
   /** Set when the code was instrumented (always in real frames). */
   guard?: UiGuardInit;
@@ -199,6 +202,29 @@ export function runUi(env: UiEnv, kit: RuntimeKit): Promise<void> {
     .then(async (module) => {
       // Loading a large module takes a while: let the app run before rendering starts.
       await nextTask();
+      if (surface.kind === 'renderer') {
+        // The plugin's shared renderer: it runs render functions for its panels and blocks, which
+        // call api.ui.render. It gets no API; only JSON goes in and out.
+        const renderers = kit.readRenderer(module);
+        rpc.onRequest(async (method, params) => {
+          if (method === 'ping') return 'pong';
+          if (method !== 'render') throw new Error(`Unknown request "${method}".`);
+          const { name, input } = (params || {}) as { name?: unknown; input?: JsonValue };
+          const render =
+            typeof name === 'string' && Object.hasOwn(renderers, name)
+              ? renderers[name]
+              : undefined;
+          if (typeof render !== 'function')
+            throw kit.makeError('not_found', `The renderer has no function "${String(name)}".`);
+          const output = await render(input ?? null);
+          const json = JSON.stringify(output === undefined ? null : output);
+          if (json === undefined)
+            throw kit.makeError('invalid', `Render function "${name}" must return JSON.`);
+          return JSON.parse(json) as unknown;
+        });
+        rpc.notify('rendered', {});
+        return;
+      }
       const definition = kit.readDefinition(module);
       const { api } = kit.createApi({ rpc, surface: surface.kind, init, definition });
       let result: unknown;

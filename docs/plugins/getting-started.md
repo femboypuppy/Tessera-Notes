@@ -212,4 +212,5 @@ plugin's tests with the others.
 - The [API reference](./api.md) lists everything `api` can do.
 - [Permissions and security](./permissions.md) explains what users are asked to allow.
 - The [examples](https://github.com/femboypuppy/Tessera-Notes/tree/main/examples/plugins) show complete plugins: the Mermaid block is a good
-  model for rich custom blocks.
+  model for rich custom blocks, and for keeping a heavy library in a
+  [renderer](./publishing.md#heavy-libraries-a-renderer) that all blocks share.

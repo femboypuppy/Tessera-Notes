@@ -69,6 +69,10 @@ export function parsePluginManifest(input: unknown): ManifestResult {
       error: t('errApiTooNew', { plugin: manifest.name, version: manifest.apiVersion }),
     };
   }
+  // Tessera 0.1 (API 1) ignores `renderer`: a plugin that needs one must say it needs API 2.
+  if (manifest.renderer && manifest.apiVersion < 2) {
+    return { ok: false, error: t('errRendererNeedsApi2', { plugin: manifest.name }) };
+  }
   if (manifest.minAppVersion && compareVersions(APP_VERSION, manifest.minAppVersion) < 0) {
     return {
       ok: false,

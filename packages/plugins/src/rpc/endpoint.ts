@@ -13,6 +13,7 @@ import {
   responseEnvelope,
   type ApiMethod,
   type ApiParams,
+  type ConnectionSurface,
   type HostEventName,
   type HostRequestMethod,
   type NotifyMethod,
@@ -33,7 +34,8 @@ export type ApiHandlers = {
 /** Options of {@link HostEndpoint}. */
 export interface HostEndpointOptions {
   port: RpcPort;
-  surface: PluginSurface;
+  /** A renderer frame has no API: every call from it is refused. */
+  surface: ConnectionSurface;
   /** The plugin's name, for messages. */
   pluginName: () => string;
   /** Permissions granted right now (checked on every call, so revoking applies at once). */
@@ -102,14 +104,14 @@ export class HostEndpoint {
     return this.inFlight.size;
   }
 
-  /** Stops listening and rejects pending host requests. */
-  dispose(): void {
+  /** Stops listening and rejects pending host requests (with `reason`, or "stopped"). */
+  dispose(reason?: PluginCallError): void {
     if (this.disposed) return;
     this.disposed = true;
     this.options.port.onmessage = null;
     for (const [, pending] of this.pending) {
       clearTimeout(pending.timer);
-      pending.reject(new PluginCallError('unavailable', t('errStopped')));
+      pending.reject(reason ?? new PluginCallError('unavailable', t('errStopped')));
     }
     this.pending.clear();
     this.inFlight.clear();
@@ -212,6 +214,12 @@ export class HostEndpoint {
       this.respondError(id, 'unavailable', t('errTooManyRequests'));
       return;
     }
+    const surface = this.options.surface;
+    if (surface === 'renderer') {
+      this.options.onWarning(`Refused an API call from the renderer ("${method.slice(0, 64)}").`);
+      this.respondError(id, 'invalid_operation', t('errRendererApi'));
+      return;
+    }
     if (!isApiMethod(method)) {
       this.options.onWarning(`Refused an unknown API call "${method.slice(0, 64)}".`);
       this.respondError(id, 'not_found', t('errUnknownMethod', { method: method.slice(0, 64) }));
@@ -228,12 +236,8 @@ export class HostEndpoint {
       permission?: PluginPermission;
       surfaces?: readonly PluginSurface[];
     } = API_METHODS[method];
-    if (specification.surfaces && !specification.surfaces.includes(this.options.surface)) {
-      this.respondError(
-        id,
-        'invalid_operation',
-        t('errWrongSurface', { method, surface: this.options.surface }),
-      );
+    if (specification.surfaces && !specification.surfaces.includes(surface)) {
+      this.respondError(id, 'invalid_operation', t('errWrongSurface', { method, surface }));
       return;
     }
     const parsed = specification.params.safeParse(params);

@@ -338,6 +338,17 @@ export const API_METHODS = {
       })
       .strict(),
   }),
+  'ui.render': spec({
+    params: z
+      .object({
+        name: z
+          .string()
+          .max(64)
+          .regex(/^[A-Za-z_$][\w$]*$/, 'Render function names are identifiers'),
+        input: jsonValueSchema.optional(),
+      })
+      .strict(),
+  }),
   'pages.list': spec({
     params: z
       .object({
@@ -430,8 +441,11 @@ export function isApiMethod(method: string): method is ApiMethod {
   return Object.hasOwn(API_METHODS, method);
 }
 
-/** Requests the host sends to a plugin. */
-export type HostRequestMethod = 'ping' | 'activate' | 'deactivate' | 'command.run';
+/** Requests the host sends to a plugin (`render` only to its renderer frame). */
+export type HostRequestMethod = 'ping' | 'activate' | 'deactivate' | 'command.run' | 'render';
+
+/** Where a connection comes from: a surface of the plugin API, or the plugin's renderer frame. */
+export type ConnectionSurface = PluginSurface | 'renderer';
 
 /** Events the host sends to a plugin. */
 export type HostEventName =

@@ -6,7 +6,12 @@ import { PLUGIN_LIMITS } from './constants';
 import { PluginCallError } from './errors';
 import { t } from './i18n';
 import { compareVersions } from './manifest';
-import type { InstalledPlugin, PluginSource, PluginStore } from './store/types';
+import type {
+  InstalledPlugin,
+  InstalledPluginCode,
+  PluginSource,
+  PluginStore,
+} from './store/types';
 
 /** A change to the installed plugins. */
 export type PluginChange =
@@ -209,9 +214,9 @@ export class PluginManager {
         settings: existing?.settings ?? {},
       };
       if (existing?.settingsSchema) plugin.settingsSchema = existing.settingsSchema;
-      const code = bundle.readme
-        ? { code: bundle.code, readme: bundle.readme }
-        : { code: bundle.code };
+      const code: InstalledPluginCode = { code: bundle.code };
+      if (bundle.renderer !== undefined) code.renderer = bundle.renderer;
+      if (bundle.readme !== undefined) code.readme = bundle.readme;
       await this.store.put(plugin, code);
       await this.reload(manifest.id);
       this.emit({ type: existing ? 'updated' : 'installed', id: manifest.id });
@@ -301,7 +306,7 @@ export class PluginManager {
     });
   }
 
-  async getCode(id: string): Promise<{ code: string; readme?: string } | undefined> {
+  async getCode(id: string): Promise<InstalledPluginCode | undefined> {
     return this.store.getCode(id);
   }
 

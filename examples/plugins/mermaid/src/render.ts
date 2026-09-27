@@ -4,6 +4,16 @@ import mermaid from 'mermaid';
 /** What rendering a diagram produced. */
 export type RenderResult = { svg: string } | { error: string };
 
+/**
+ * What a block sends the renderer: the diagram's source, the app's theme, and the width the
+ * diagram will show at (some diagrams, like timelines, fill it).
+ */
+export type DiagramInput = {
+  code: string;
+  theme: Pick<ThemeInfo, 'mode' | 'tokens' | 'reducedMotion'>;
+  width: number;
+};
+
 /** Parses a CSS color into RGBA using the browser (handles every CSS color syntax). */
 function rgba(value: string, doc: Document): [number, number, number, number] | null {
   const probe = doc.createElement('span');
@@ -40,7 +50,10 @@ export function solidColor(
 }
 
 /** Mermaid's theme variables from Tessera's design tokens, so diagrams match the app. */
-export function themeVariables(theme: ThemeInfo, doc: Document): Record<string, string | boolean> {
+export function themeVariables(
+  theme: DiagramInput['theme'],
+  doc: Document,
+): Record<string, string | boolean> {
   const token = (name: string) => theme.tokens[name];
   const surface =
     solidColor(token('surface'), token('bg'), doc) ??
@@ -109,12 +122,29 @@ export function themeVariables(theme: ThemeInfo, doc: Document): Record<string, 
 
 let configured = '';
 let counter = 0;
+let queue: Promise<unknown> = Promise.resolve();
 
-/** Renders a diagram to SVG in the current theme. Invalid code returns mermaid's error message. */
-export async function renderDiagram(
+/**
+ * Renders a diagram to SVG in a theme, laid out at `width` pixels. Invalid code returns mermaid's
+ * error message. One diagram at a time: mermaid's configuration is global, and blocks in different
+ * states (a theme change on its way) may ask at once.
+ */
+export function renderDiagram(
   code: string,
-  theme: ThemeInfo,
+  theme: DiagramInput['theme'],
   doc: Document,
+  width?: number,
+): Promise<RenderResult> {
+  const result = queue.then(() => draw(code, theme, doc, width));
+  queue = result.catch(() => undefined);
+  return result;
+}
+
+async function draw(
+  code: string,
+  theme: DiagramInput['theme'],
+  doc: Document,
+  width: number | undefined,
 ): Promise<RenderResult> {
   const variables = themeVariables(theme, doc);
   const key = JSON.stringify(variables);
@@ -130,13 +160,18 @@ export async function renderDiagram(
     });
     configured = key;
   }
+  const container = doc.createElement('div');
+  if (width) container.style.width = `${Math.round(width)}px`;
+  doc.body.append(container);
   try {
     await mermaid.parse(code);
     counter += 1;
-    const { svg } = await mermaid.render(`tessera-mermaid-${counter}`, code);
+    const { svg } = await mermaid.render(`tessera-mermaid-${counter}`, code, container);
     return { svg };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     return { error: message.split('\n').slice(0, 4).join('\n') };
+  } finally {
+    container.remove();
   }
 }

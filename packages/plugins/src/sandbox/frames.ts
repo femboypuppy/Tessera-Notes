@@ -55,8 +55,10 @@ export interface WorkerSandboxOptions extends CommonOptions {
 }
 
 export interface UiSandboxOptions extends CommonOptions {
-  /** Where the visible frame goes. */
+  /** Where the frame goes. */
   container: HTMLElement;
+  /** A panel or block (`ui`, the default), or the plugin's hidden renderer. */
+  kind?: 'ui' | 'renderer';
   /** Accessible name of the frame. */
   title: string;
   init: UiInit;
@@ -79,7 +81,7 @@ function readControl(data: unknown): ControlMessage | null {
   }
 }
 
-function newFrame(title: string, kind: 'worker' | 'ui'): HTMLIFrameElement {
+function newFrame(title: string, kind: 'worker' | 'ui' | 'renderer'): HTMLIFrameElement {
   const frame = document.createElement('iframe');
   frame.setAttribute('data-plugin-frame', kind);
   // Scripts only: no same-origin (opaque origin, no access to the app's storage or DOM), no
@@ -160,7 +162,13 @@ export const domSandboxFactory: SandboxFactory = {
     // UI frames may share the app's thread: their code is instrumented so it can be stopped.
     const prepared = await uiCodePreparer.prepare(options.code, options.cacheKey);
     const nonce = createNonce();
-    const frame = newFrame(options.title, 'ui');
+    const kind = options.kind ?? 'ui';
+    const frame = newFrame(options.title, kind);
+    if (kind === 'renderer') {
+      // Out of sight and out of reach (its container keeps it laid out, so text measures).
+      frame.setAttribute('aria-hidden', 'true');
+      frame.tabIndex = -1;
+    }
     frame.style.cssText = 'display:block;border:0;width:100%;height:100%;background:transparent';
     const init: UiInit = {
       ...options.init,
@@ -185,5 +193,6 @@ export const domSandboxFactory: SandboxFactory = {
   },
   forget(pluginId) {
     void uiCodePreparer.forget(pluginId);
+    void uiCodePreparer.forget(`${pluginId}/renderer`);
   },
 };

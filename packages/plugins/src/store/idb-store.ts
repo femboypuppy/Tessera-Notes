@@ -103,9 +103,10 @@ export class IndexedDbPluginStore implements PluginStore {
     if (typeof value !== 'object' || value === null) return undefined;
     const code = value as Partial<InstalledPluginCode>;
     if (typeof code.code !== 'string') return undefined;
-    return typeof code.readme === 'string'
-      ? { code: code.code, readme: code.readme }
-      : { code: code.code };
+    const result: InstalledPluginCode = { code: code.code };
+    if (typeof code.renderer === 'string') result.renderer = code.renderer;
+    if (typeof code.readme === 'string') result.readme = code.readme;
+    return result;
   }
 
   async delete(id: string): Promise<void> {

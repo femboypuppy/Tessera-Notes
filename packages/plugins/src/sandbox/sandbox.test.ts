@@ -187,6 +187,101 @@ describe('sandbox sources are self-contained', () => {
   });
 });
 
+describe('the renderer frame', () => {
+  it('runs from a fresh realm: loads the renderer module and answers render requests with JSON', async () => {
+    const context = realm();
+    const kit = evaluate<() => RuntimeKit>(createRuntimeKit.toString(), context)();
+    const run = evaluate<typeof runUi>(runUi.toString(), context);
+    const channel = new MessageChannel();
+    const received = messages(channel.port1);
+    const env: UiEnv = {
+      port: channel.port2,
+      code: '',
+      init: { ...init, surface: { kind: 'renderer' }, fonts: [] },
+      importPlugin: async () => ({
+        default: {
+          __tesseraRenderer: 1,
+          renderers: {
+            size: (input: { text: string }) => ({ width: input.text.length * 7 }),
+            later: async () => ({ at: new Date(0) }),
+            broken: () => () => undefined,
+          },
+        },
+      }),
+      window: { addEventListener: () => undefined },
+      document: document.implementation.createHTMLDocument('renderer'),
+      console: { log() {}, info() {}, warn() {}, error() {}, debug() {} },
+      ResizeObserver: globalThis.ResizeObserver,
+      FontFace: class {} as unknown as typeof FontFace,
+      performance: globalThis.performance,
+      MessageChannel: globalThis.MessageChannel,
+    };
+    await run(env, kit);
+    await vi.waitFor(() =>
+      expect(received).toContainEqual(expect.objectContaining({ method: 'rendered' })),
+    );
+    const ask = (id: number, params: unknown) =>
+      channel.port1.postMessage({ v: 1, type: 'request', id, method: 'render', params });
+    ask(1, { name: 'size', input: { text: 'abc' } });
+    ask(2, { name: 'later' });
+    ask(3, { name: 'broken' });
+    ask(4, { name: 'toString' });
+    await vi.waitFor(() =>
+      expect(received.filter((message) => message.type === 'response')).toHaveLength(4),
+    );
+    expect(received).toContainEqual({
+      v: 1,
+      type: 'response',
+      id: 1,
+      ok: true,
+      result: { width: 21 },
+    });
+    // Results go back as JSON, like everything else that leaves the sandbox.
+    expect(received).toContainEqual({
+      v: 1,
+      type: 'response',
+      id: 2,
+      ok: true,
+      result: { at: '1970-01-01T00:00:00.000Z' },
+    });
+    expect(received).toContainEqual(
+      expect.objectContaining({
+        id: 3,
+        ok: false,
+        error: expect.objectContaining({
+          message: 'Render function "broken" must return JSON.',
+        }) as unknown,
+      }),
+    );
+    // Only its own functions: nothing inherited from Object.prototype.
+    expect(received).toContainEqual(
+      expect.objectContaining({
+        id: 4,
+        ok: false,
+        error: expect.objectContaining({
+          message: 'The renderer has no function "toString".',
+        }) as unknown,
+      }),
+    );
+    channel.port1.close();
+  });
+
+  it('says what is wrong with a module that isn’t a renderer', async () => {
+    const kit = createRuntimeKit();
+    expect(() => kit.readRenderer({ default: { renderers: { a: () => 1 } } })).toThrow(
+      "The renderer's code doesn't export a renderer. Its default export should be defineRenderer({ … }).",
+    );
+    expect(() =>
+      kit.readRenderer({ default: { __tesseraRenderer: 1, renderers: { a: 1 } } }),
+    ).toThrow();
+    expect(
+      Object.keys(
+        kit.readRenderer({ default: { __tesseraRenderer: 1, renderers: { a: () => 1 } } }),
+      ),
+    ).toEqual(['a']);
+  });
+});
+
 describe('the guard of instrumented UI code', () => {
   it('locks scripts on its first call, stops a run that takes too long, and stays stopped', () => {
     const kit = evaluate<() => RuntimeKit>(createRuntimeKit.toString(), realm())();
