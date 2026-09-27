@@ -25,6 +25,11 @@ export interface IndexedDbDocStoreOptions extends IndexedDbOptions {
    * acknowledged, in the same transaction, so the background sync can never miss it.
    */
   trackSync?: boolean;
+  /**
+   * How long to wait for another tab to confirm that updates it announced are durable before
+   * storing them here (that tab may have closed or crashed first). Default 5000 ms.
+   */
+  adoptAfterMs?: number;
 }
 
 interface UpdateRecord {
@@ -37,16 +42,38 @@ interface QueuedWrite {
   update: Uint8Array;
   /** Came from the server: nothing new for the server, so it doesn't mark the doc dirty. */
   remote: boolean;
+  /** Announced to the other tabs under this number (0: not announced). */
+  seq: number;
   resolve(): void;
   reject(error: Error): void;
 }
 
-/** What one tab tells the others after a write committed. */
+/** An update another tab announced. */
+interface ForeignUpdate {
+  doc: string;
+  update: Uint8Array;
+  remote: boolean;
+}
+
+/** Updates one tab tells the others about. */
 interface UpdatesMessage {
   v: 1;
   type: 'updates';
   source: string;
-  items: Array<{ doc: string; update: Uint8Array }>;
+  /**
+   * Set when the updates are not durable yet: a `committed` message with the same number
+   * follows once they are. Tabs of earlier versions announce durable updates, without it.
+   */
+  seq?: number;
+  items: Array<{ doc: string; update: Uint8Array; remote?: boolean }>;
+}
+
+/** Tells the other tabs that announced updates are durable. */
+interface CommittedMessage {
+  v: 1;
+  type: 'committed';
+  source: string;
+  seqs: number[];
 }
 
 function isUpdatesMessage(value: unknown): value is UpdatesMessage {
@@ -56,7 +83,20 @@ function isUpdatesMessage(value: unknown): value is UpdatesMessage {
     message.v === 1 &&
     message.type === 'updates' &&
     typeof message.source === 'string' &&
-    Array.isArray(message.items)
+    Array.isArray(message.items) &&
+    (message.seq === undefined || Number.isSafeInteger(message.seq))
+  );
+}
+
+function isCommittedMessage(value: unknown): value is CommittedMessage {
+  if (!value || typeof value !== 'object') return false;
+  const message = value as Partial<CommittedMessage>;
+  return (
+    message.v === 1 &&
+    message.type === 'committed' &&
+    typeof message.source === 'string' &&
+    Array.isArray(message.seqs) &&
+    message.seqs.every((seq) => Number.isSafeInteger(seq))
   );
 }
 
@@ -74,10 +114,14 @@ const LOAD_BUFFER_MS = 30_000;
  *   one readwrite transaction. IndexedDB serializes readwrite transactions on a store, so a write
  *   from this or another tab lands entirely before (and is merged) or after (and is kept).
  *   Docs are also compacted in the background once they pass `compactThreshold` updates.
- * - **Multi-tab.** After a write commits, the tab broadcasts it; other tabs deliver it through
- *   `watch`, and the runtime applies it without storing it again. Updates that arrive while a
- *   doc is loading are buffered and replayed to its watcher, so none slips between `load` and
- *   `watch`.
+ * - **Multi-tab.** A tab announces its writes to the other tabs as it queues them, before the
+ *   commit (which can take seconds on a busy disk), and confirms them once they are durable.
+ *   Other tabs deliver them through `watch`, and the runtime applies them without storing them
+ *   again. Until an update is confirmed, the tabs that saw it keep it: they store it with their
+ *   own writes to the same doc (which may build on it), or on their own after `adoptAfterMs`,
+ *   so it survives its tab closing or crashing before the commit. Updates that arrive while a
+ *   doc is loading, and unconfirmed ones the store may not hold yet, are replayed to its
+ *   watcher, so none slips between `load` and `watch`.
  * - **Errors** (a full disk, a database deleted in another tab) reject the write, so the
  *   runtime keeps the update and retries it, and are reported through {@link onStorageError}.
  *
@@ -110,11 +154,23 @@ export class IndexedDbDocStore implements DocStore {
   private readonly compactThreshold: number;
   private readonly compactDelayMs: number;
   private readonly trackSync: boolean;
+  private readonly adoptAfterMs: number;
   private readonly errors = new StorageErrorEmitter();
 
   private queue: QueuedWrite[] = [];
   private writing: Promise<void> | null = null;
   private pumpScheduled = false;
+  /** Queued writes the other tabs haven't heard about yet. */
+  private unannounced: QueuedWrite[] = [];
+  private sequence = 0;
+  /** Writes announced and not durable yet, by announcement number. */
+  private readonly announced = new Map<number, number>();
+  /** Updates other tabs announced and haven't confirmed yet, by `source:seq`. */
+  private readonly unconfirmed = new Map<
+    string,
+    { items: ForeignUpdate[]; timer: ReturnType<typeof setTimeout> }
+  >();
+  private adoptions = 0;
 
   private readonly watchers = new Map<string, Set<(update: Uint8Array) => void>>();
   private readonly loadBuffers = new Map<
@@ -132,6 +188,7 @@ export class IndexedDbDocStore implements DocStore {
     this.compactThreshold = options.compactThreshold ?? 400;
     this.compactDelayMs = options.compactDelayMs ?? 1500;
     this.trackSync = options.trackSync === true;
+    this.adoptAfterMs = options.adoptAfterMs ?? 5000;
     const factory = options.channel === undefined ? browserChannel : options.channel;
     this.channel = factory ? factory(`tessera:docs:${workspaceId}`) : null;
     if (this.channel) this.channel.onmessage = (event) => this.receive(event.data);
@@ -187,11 +244,25 @@ export class IndexedDbDocStore implements DocStore {
     return this.enqueue(docName, update, true);
   }
 
-  private enqueue(docName: string, update: Uint8Array, remote: boolean): Promise<void> {
+  private enqueue(
+    docName: string,
+    update: Uint8Array,
+    remote: boolean,
+    announce = true,
+  ): Promise<void> {
     if (this.disposed) return Promise.reject(new StoreClosedError('The document store is closed'));
     return new Promise<void>((resolve, reject) => {
       // Copy: callers may reuse the buffer, and the copy is what goes to IndexedDB and other tabs.
-      this.queue.push({ docName, update: update.slice(), remote, resolve, reject });
+      const write: QueuedWrite = {
+        docName,
+        update: update.slice(),
+        remote,
+        seq: 0,
+        resolve,
+        reject,
+      };
+      this.queue.push(write);
+      if (announce) this.unannounced.push(write);
       this.schedulePump();
     });
   }
@@ -212,7 +283,9 @@ export class IndexedDbDocStore implements DocStore {
   }
 
   async delete(docName: string): Promise<void> {
-    // Queued writes land first, so none can recreate the doc after it is gone.
+    // Queued writes land first, so none can recreate the doc after it is gone, and updates other
+    // tabs haven't confirmed are forgotten.
+    this.takeUnconfirmed(new Set([docName]));
     await this.flushWrites();
     const timer = this.compactTimers.get(docName);
     if (timer) clearTimeout(timer);
@@ -295,8 +368,12 @@ export class IndexedDbDocStore implements DocStore {
   /** Waits for pending writes and running compactions, then closes the database. */
   async dispose(): Promise<void> {
     if (this.disposed) return;
+    // Updates another tab hasn't confirmed are stored here too: that tab may be gone.
+    for (const key of [...this.unconfirmed.keys()]) this.adopt(key);
     await this.flushWrites();
     this.disposed = true;
+    for (const { timer } of this.unconfirmed.values()) clearTimeout(timer);
+    this.unconfirmed.clear();
     for (const timer of this.compactTimers.values()) clearTimeout(timer);
     this.compactTimers.clear();
     await Promise.allSettled([...this.compactions.values()]);
@@ -327,11 +404,57 @@ export class IndexedDbDocStore implements DocStore {
   private schedulePump(): void {
     if (this.pumpScheduled) return;
     this.pumpScheduled = true;
-    // Gather the updates of one tick (a transaction often emits several) into one commit.
+    // Gather the updates of one tick (a transaction often emits several) into one commit, and
+    // announce them first: the commit may wait behind another, and takes a while on a busy disk.
     queueMicrotask(() => {
       this.pumpScheduled = false;
+      this.announce();
       this.pump();
     });
+  }
+
+  /** Tells the other tabs about the writes queued since the last announcement. */
+  private announce(): void {
+    const writes = this.unannounced;
+    this.unannounced = [];
+    if (!this.channel || writes.length === 0) return;
+    const seq = (this.sequence += 1);
+    const sent = this.post({
+      v: 1,
+      type: 'updates',
+      source: this.source,
+      seq,
+      items: writes.map((write) => ({
+        doc: write.docName,
+        update: write.update,
+        remote: write.remote,
+      })),
+    });
+    if (!sent) return;
+    for (const write of writes) write.seq = seq;
+    this.announced.set(seq, writes.length);
+  }
+
+  /** Tells the other tabs which of the announced writes of a batch are durable now. */
+  private confirm(batch: readonly QueuedWrite[]): void {
+    const seqs: number[] = [];
+    for (const write of batch) {
+      if (!write.seq) continue;
+      const left = (this.announced.get(write.seq) ?? 1) - 1;
+      if (left > 0) this.announced.set(write.seq, left);
+      else if (this.announced.delete(write.seq)) seqs.push(write.seq);
+    }
+    if (seqs.length > 0) this.post({ v: 1, type: 'committed', source: this.source, seqs });
+  }
+
+  private post(message: UpdatesMessage | CommittedMessage): boolean {
+    try {
+      this.channel?.postMessage(message);
+      return true;
+    } catch (error) {
+      console.error('[sync] could not notify other tabs', error);
+      return false;
+    }
   }
 
   private pump(): void {
@@ -354,6 +477,9 @@ export class IndexedDbDocStore implements DocStore {
   }
 
   private async writeBatch(batch: QueuedWrite[]): Promise<void> {
+    // Updates of other tabs that aren't durable yet go with this tab's writes to the same docs,
+    // which may build on them.
+    const carried = this.takeUnconfirmed(new Set(batch.map((write) => write.docName)));
     try {
       const db = this.requireDb();
       const transaction = db.transaction(
@@ -366,8 +492,13 @@ export class IndexedDbDocStore implements DocStore {
         const store = transaction.objectStore(STORES.updates);
         for (const write of batch)
           store.add({ doc: write.docName, update: write.update } satisfies UpdateRecord);
+        for (const item of carried)
+          store.add({ doc: item.doc, update: item.update } satisfies UpdateRecord);
         if (this.trackSync) {
-          const local = batch.filter((write) => !write.remote).map((write) => write.docName);
+          const local = [
+            ...batch.filter((write) => !write.remote).map((write) => write.docName),
+            ...carried.filter((item) => !item.remote).map((item) => item.doc),
+          ];
           if (local.length > 0) markDirtyInTransaction(transaction, local, Date.now());
         }
       } catch (error) {
@@ -385,6 +516,11 @@ export class IndexedDbDocStore implements DocStore {
       const err = asError(error);
       if (!(err instanceof StoreClosedError) || this.closedReason)
         this.errors.emit('store', err, batch[0]?.docName);
+      // These are never confirmed: the tabs that saw them store them after a while (the runtime
+      // keeps them and writes them again too). Ones not announced yet never will be.
+      for (const write of batch) if (write.seq) this.announced.delete(write.seq);
+      this.unannounced = this.unannounced.filter((write) => !batch.includes(write));
+      if (carried.length > 0) this.track(`carried:${(this.adoptions += 1)}`, carried);
       for (const write of batch) write.reject(err);
       return;
     }
@@ -394,37 +530,71 @@ export class IndexedDbDocStore implements DocStore {
       perDoc.set(write.docName, (perDoc.get(write.docName) ?? 0) + 1);
       write.resolve();
     }
+    for (const item of carried) perDoc.set(item.doc, (perDoc.get(item.doc) ?? 0) + 1);
     for (const [docName, added] of perDoc) this.noteStored(docName, added);
-    this.broadcast(batch);
-  }
-
-  private broadcast(batch: QueuedWrite[]): void {
-    if (!this.channel) return;
-    const message: UpdatesMessage = {
-      v: 1,
-      type: 'updates',
-      source: this.source,
-      items: batch.map((write) => ({ doc: write.docName, update: write.update })),
-    };
-    try {
-      this.channel.postMessage(message);
-    } catch (error) {
-      console.error('[sync] could not notify other tabs', error);
-    }
+    this.confirm(batch);
   }
 
   // Reading other tabs' writes.
 
   private receive(data: unknown): void {
-    if (this.disposed || !isUpdatesMessage(data) || data.source === this.source) return;
+    if (this.disposed) return;
+    if (isCommittedMessage(data)) {
+      if (data.source !== this.source)
+        for (const seq of data.seqs) this.forget(`${data.source}:${seq}`);
+      return;
+    }
+    if (!isUpdatesMessage(data) || data.source === this.source) return;
+    const items: ForeignUpdate[] = [];
     for (const item of data.items) {
       const update = asBytes(item?.update);
       if (typeof item?.doc !== 'string' || !update) continue;
+      items.push({ doc: item.doc, update, remote: item.remote === true });
       this.counts.set(item.doc, (this.counts.get(item.doc) ?? 0) + 1);
       this.loadBuffers.get(item.doc)?.updates.push(update);
       for (const watcher of [...(this.watchers.get(item.doc) ?? [])])
         this.deliver(watcher, update, item.doc);
     }
+    // Not durable yet: kept until their tab confirms them.
+    if (data.seq !== undefined && items.length > 0) this.track(`${data.source}:${data.seq}`, items);
+  }
+
+  private track(key: string, items: ForeignUpdate[]): void {
+    const timer = setTimeout(() => this.adopt(key), this.adoptAfterMs);
+    this.unconfirmed.set(key, { items, timer });
+  }
+
+  private forget(key: string): void {
+    const entry = this.unconfirmed.get(key);
+    if (!entry) return;
+    clearTimeout(entry.timer);
+    this.unconfirmed.delete(key);
+  }
+
+  /** Stores updates another tab announced and never confirmed: it may have closed first. */
+  private adopt(key: string): void {
+    const entry = this.unconfirmed.get(key);
+    if (!entry) return;
+    this.forget(key);
+    for (const item of entry.items) {
+      this.enqueue(item.doc, item.update, item.remote, false).catch(() => {
+        // Reported as a storage error; tried again after another wait.
+        if (!this.disposed) this.track(`adopted:${(this.adoptions += 1)}`, [item]);
+      });
+    }
+  }
+
+  /** Removes the unconfirmed updates of other tabs to these docs, and returns them. */
+  private takeUnconfirmed(docs: ReadonlySet<string>): ForeignUpdate[] {
+    const taken: ForeignUpdate[] = [];
+    for (const [key, entry] of this.unconfirmed) {
+      const kept: ForeignUpdate[] = [];
+      for (const item of entry.items) (docs.has(item.doc) ? taken : kept).push(item);
+      if (kept.length === entry.items.length) continue;
+      if (kept.length > 0) entry.items = kept;
+      else this.forget(key);
+    }
+    return taken;
   }
 
   private deliver(watcher: (update: Uint8Array) => void, update: Uint8Array, docName: string) {
@@ -438,7 +608,11 @@ export class IndexedDbDocStore implements DocStore {
   private beginLoadBuffer(docName: string): void {
     if (this.loadBuffers.has(docName)) return;
     const timer = setTimeout(() => this.loadBuffers.delete(docName), LOAD_BUFFER_MS);
-    this.loadBuffers.set(docName, { updates: [], timer });
+    // What other tabs announced and haven't confirmed may be missing from what `load` reads.
+    const updates: Uint8Array[] = [];
+    for (const entry of this.unconfirmed.values())
+      for (const item of entry.items) if (item.doc === docName) updates.push(item.update);
+    this.loadBuffers.set(docName, { updates, timer });
   }
 
   private endLoadBuffer(docName: string): void {
