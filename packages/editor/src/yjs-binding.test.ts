@@ -184,6 +184,53 @@ describe('undo and redo across structural changes', () => {
     }
   });
 
+  // The same y-tiptap bug: an undo step's saved caret must not reach the next Yjs transaction.
+  it('keeps the caret in place when someone else edits right after an undo', () => {
+    const a = new Y.Doc();
+    const bDoc = new Y.Doc();
+    writeDocJSON(a, b.doc(b.paragraph('Agenda'), b.paragraph('Minutes')));
+    cleanups.push(linkDocs(a, bDoc));
+    const mine = setup({ doc: a });
+    const theirs = setup({ doc: bDoc });
+    mine.editor.commands.setTextSelection(7);
+    typeText(mine.editor, ' draft');
+    // Back at the end of "Minutes", undo the typing.
+    mine.editor.commands.setTextSelection(mine.editor.state.doc.content.size - 1);
+    mine.editor.commands.undo();
+    // Before my next keystroke, someone else types at the start of "Minutes".
+    theirs.editor.commands.setTextSelection(9);
+    typeText(theirs.editor, 'Re: ');
+    typeText(mine.editor, ' approved');
+
+    expect(blockTexts(mine.editor)).toEqual(['paragraph:Agenda', 'paragraph:Re: Minutes approved']);
+    expect(blockTexts(theirs.editor)).toEqual(blockTexts(mine.editor));
+  });
+
+  it('never leaves a block selected for the next keystroke to replace, after an undo', () => {
+    const a = new Y.Doc();
+    const bDoc = new Y.Doc();
+    writeDocJSON(a, b.doc(b.paragraph('Above'), b.horizontalRule(), b.paragraph('Below')));
+    cleanups.push(linkDocs(a, bDoc));
+    const mine = setup({ doc: a });
+    const theirs = setup({ doc: bDoc });
+    // Select the divider and delete it, then undo from the end of "Below".
+    mine.editor.commands.setNodeSelection(7);
+    mine.editor.commands.deleteSelection();
+    mine.editor.commands.setTextSelection(mine.editor.state.doc.content.size - 1);
+    mine.editor.commands.undo();
+    // Before my next keystroke, someone else types in "Above".
+    theirs.editor.commands.setTextSelection(1);
+    typeText(theirs.editor, 'See ');
+    typeText(mine.editor, '!');
+
+    expect(blockTexts(mine.editor)).toEqual([
+      'paragraph:See Above',
+      'horizontalRule:',
+      'paragraph:Below!',
+    ]);
+    expect(blockTexts(theirs.editor)).toEqual(blockTexts(mine.editor));
+  });
+
   it('makes block operations undo steps of their own, even right after typing', () => {
     const { editor } = setup({ content: b.doc(b.paragraph('Ignition'), b.paragraph('Orbit')) });
     editor.commands.focus('end');
