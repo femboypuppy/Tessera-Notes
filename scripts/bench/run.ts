@@ -1,8 +1,9 @@
 /**
  * The benchmark suite (SPEC.md section 10): cold start with 5,000 pages, search p95, the palette,
- * opening a 2,000-block page, typing latency, the graph view, and importing 2,000 files. It builds
- * the seeded harness (the real app with a generated workspace), runs each benchmark in a fresh
- * Chromium context, prints a markdown table and writes JSON.
+ * opening a 2,000-block page, typing latency, the graph view, importing 2,000 files, and the first
+ * open of 5,000 imported notes from IndexedDB. It builds the seeded harness (the real app with a
+ * generated workspace, or on its real storage), runs each benchmark in a fresh Chromium context,
+ * prints a markdown table and writes JSON.
  *
  *   pnpm exec tsx scripts/bench/run.ts [--out dir] [--only cold-start,search]
  *     [--runs 3] [--compare baseline/results.json] [--strict] [--headed]
@@ -56,6 +57,7 @@ const harness = await startHarness({
 const browser = await chromium.launch({ headless: !values.headed });
 const context: BenchContext = {
   browser,
+  headless: !values.headed,
   harness,
   runs: Math.max(1, Number(values.runs) || 3),
   log,
