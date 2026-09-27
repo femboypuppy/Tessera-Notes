@@ -1,4 +1,5 @@
 import {
+  addProperty,
   build as b,
   defineFeature,
   defineService,
@@ -37,7 +38,7 @@ class PostMessageTransport extends InProcessTransport {
   }
 }
 
-function indexFeature(persistence: IndexPersistence) {
+function indexFeature(persistence: IndexPersistence, options: { retitleDelayMs?: number } = {}) {
   const transport = () => new PostMessageTransport({ persistence, saveDelayMs: 5 });
   return defineFeature({
     id: 'search',
@@ -46,13 +47,13 @@ function indexFeature(persistence: IndexPersistence) {
         provides: 'searchIndex',
         id: 'minisearch',
         priority: SERVICE_PRIORITY.browser,
-        create: (context) => createSearchIndex(context, { transport }),
+        create: (context) => createSearchIndex(context, { transport, ...options }),
       }),
       defineService({
         provides: 'linkIndex',
         id: 'graph',
         priority: SERVICE_PRIORITY.browser,
-        create: (context) => createLinkIndex(context, { transport }),
+        create: (context) => createLinkIndex(context, { transport, ...options }),
       }),
     ],
   });
@@ -60,8 +61,11 @@ function indexFeature(persistence: IndexPersistence) {
 
 const open: TestAppContext[] = [];
 
-async function setup(persistence: IndexPersistence = new MemoryPersistence()) {
-  const test = await createTestAppContext({ features: [indexFeature(persistence)] });
+async function setup(
+  persistence: IndexPersistence = new MemoryPersistence(),
+  options: { retitleDelayMs?: number } = {},
+) {
+  const test = await createTestAppContext({ features: [indexFeature(persistence, options)] });
   open.push(test);
   const search = test.ctx.services.searchIndex;
   const links = test.ctx.services.linkIndex;
@@ -145,6 +149,59 @@ describe('MiniSearchIndex in a workspace session', () => {
     await search.whenIdle();
     expect((await search.query('saturn')).total).toBe(0);
     expect((await search.query('')).hits.map((hit) => hit.pageId)).toEqual([gemini.id]);
+  });
+
+  it('finds pages and rows by the new title of a page they link to', async () => {
+    const { test, search, ctx } = await setup();
+    const apollo = ctx.workspace.createPage({ title: 'Apollo' });
+    const notes = ctx.workspace.createPage({ title: 'Mission notes' });
+    await write(test, notes.id, b.doc(b.paragraph('Read ', b.pageLink(apollo.id), ' first')));
+    const { page: missions } = await ctx.workspace.createDatabase({
+      title: 'Missions',
+      titlePropertyName: 'Name',
+      viewName: 'Table',
+    });
+    const handle = await ctx.loadDatabaseDoc(missions.id);
+    const program = addProperty(handle.doc, {
+      name: 'Program',
+      type: 'relation',
+      relation: { targetDatabaseId: null, limit: 'many' },
+    });
+    handle.release();
+    const crew = await ctx.workspace.addDatabaseRow(missions.id, {
+      title: 'Crew selection',
+      values: { [program.id]: [apollo.id] },
+    });
+    await search.whenIdle();
+    const linking = [apollo.id, notes.id, crew.id].sort();
+    expect(ids(await search.query('apollo')).sort()).toEqual(linking);
+
+    // Neither the notes nor the row changes: the text they show does.
+    ctx.workspace.renamePage(apollo.id, 'Artemis');
+    await search.whenIdle();
+    expect(ids(await search.query('artemis')).sort()).toEqual(linking);
+    expect(ids(await search.query('apollo'))).toEqual([]);
+  });
+
+  it('reads the pages that show a title again once it settles, not after every letter', async () => {
+    const { test, search, ctx } = await setup(new MemoryPersistence(), { retitleDelayMs: 60_000 });
+    const apollo = ctx.workspace.createPage({ title: 'A' });
+    const notes = ctx.workspace.createPage({ title: 'Mission notes' });
+    await write(test, notes.id, b.doc(b.paragraph('Read ', b.pageLink(apollo.id), ' first')));
+    await search.whenIdle();
+    const read = search.host.docsRead;
+
+    // Typed letter by letter, each title reaches the index (a query waits for it).
+    for (const title of ['Ar', 'Art', 'Arte', 'Artemis']) {
+      ctx.workspace.renamePage(apollo.id, title);
+      expect(ids(await search.query(title))).toContain(apollo.id);
+    }
+    expect(search.host.docsRead).toBe(read);
+    expect(ids(await search.query('artemis'))).toEqual([apollo.id]);
+
+    await search.whenIdle();
+    expect(search.host.docsRead).toBe(read + 1);
+    expect(ids(await search.query('artemis')).sort()).toEqual([apollo.id, notes.id].sort());
   });
 
   it('parses filters and combines them with options', async () => {

@@ -10,9 +10,10 @@ import {
   type AnyNodeJSON,
   type HighlightRange,
   type LinkEdge,
+  type PageKind,
 } from '@tessera/core';
 import MiniSearch, { type AsPlainObject, type SearchResult } from 'minisearch';
-import { docFromBytes, readContent, readRowValues, segmentsText } from './extract';
+import { docFromBytes, readContent, readRowValues, segmentsText, type RowValues } from './extract';
 import { escapeRegExp, highlightTerms, normalizeTerm, snippetAround, tokenSpans } from './text';
 import type {
   BlockEntry,
@@ -153,6 +154,10 @@ export class IndexCore {
   private readonly dbFingerprints = new Map<string, number>();
   private readonly indexedTitles = new Map<string, string>();
   private readonly backrefs = new Map<string, Set<string>>();
+  /** Databases whose rows relate to a page (their text holds its title), by page. */
+  private readonly relationRefs = new Map<string, Set<string>>();
+  /** The pages each database's relation cells point to. */
+  private readonly dbRelations = new Map<string, Set<string>>();
   private readonly tagKeyCache = new Map<string, Set<string>>();
   /** Titles folded like search terms, for the exact and prefix title bonus. */
   private readonly foldedTitles = new Map<string, string>();
@@ -168,8 +173,19 @@ export class IndexCore {
         this.contents.set(id, record);
         this.addBackrefs(id, record);
       }
-      for (const [id, record] of persisted.rows) this.rows.set(id, record);
+      const relations = new Map<string, Set<string>>();
+      const unknownRelations = new Set<string>();
+      for (const [id, record] of persisted.rows) {
+        this.rows.set(id, record);
+        if (!record.relations) unknownRelations.add(record.databaseId);
+        const targets = relations.get(record.databaseId) ?? new Set<string>();
+        for (const target of record.relations ?? []) targets.add(target);
+        relations.set(record.databaseId, targets);
+      }
+      for (const [id, targets] of relations) this.setRelations(id, targets);
       for (const [id, fingerprint] of persisted.databases) this.dbFingerprints.set(id, fingerprint);
+      // Saved before rows kept their relation targets: those databases are read again, once.
+      for (const id of unknownRelations) this.dbFingerprints.delete(id);
       for (const [id, title] of persisted.titles) this.indexedTitles.set(id, title);
       this.restored = true;
     } else {
@@ -198,11 +214,20 @@ export class IndexCore {
   // ---------------------------------------------------------------------------------------------
 
   /**
-   * Applies metadata. With `full`, `upserts` is every page: anything else is removed, and the
-   * result lists the pages and databases whose stored content is missing or stale.
+   * Applies metadata. With `full`, `upserts` is every page: anything else is removed. The result
+   * lists the pages and databases to read again: with `full`, those whose stored content is
+   * missing or stale; and whenever a title changes, appears or goes, the pages that link to it
+   * and the databases whose rows relate to it, since their text holds the title they were read
+   * with.
    */
   setMeta(upserts: readonly PageMetaLite[], removes: readonly string[], full = false): StaleSet {
-    const summary = { pages: [] as PageMetaLite[], databases: [] as PageMetaLite[] };
+    const pages = new Set<string>();
+    const databases = new Set<string>();
+    const retitled = new Set<string>();
+    const remove = (ids: readonly string[]) => {
+      for (const id of ids) if (this.knownTitle(id) !== undefined) retitled.add(id);
+      this.removePages(ids);
+    };
     if (full) {
       const keep = new Set(upserts.map((page) => page.id));
       const gone = new Set<string>();
@@ -210,10 +235,11 @@ export class IndexCore {
       for (const id of this.contents.keys()) if (!keep.has(id)) gone.add(id);
       for (const id of this.indexedTitles.keys()) if (!keep.has(id)) gone.add(id);
       for (const id of this.dbFingerprints.keys()) if (!keep.has(id)) gone.add(id);
-      this.removePages([...gone]);
+      remove([...gone]);
     }
-    this.removePages(removes);
+    remove(removes);
     for (const page of upserts) {
+      if (this.knownTitle(page.id) !== page.title) retitled.add(page.id);
       this.meta.set(page.id, page);
       this.foldedTitles.set(page.id, normalizeTerm(page.title.trim()));
       if (!this.mini.has(page.id) || this.indexedTitles.get(page.id) !== page.title) {
@@ -223,17 +249,28 @@ export class IndexCore {
     if (full) {
       for (const page of upserts) {
         if (page.kind === 'page') {
-          if (this.contents.get(page.id)?.fingerprint !== page.updatedAt) summary.pages.push(page);
+          if (this.contents.get(page.id)?.fingerprint !== page.updatedAt) pages.add(page.id);
         } else if (this.dbFingerprints.get(page.id) !== page.updatedAt) {
-          summary.databases.push(page);
+          databases.add(page.id);
         }
       }
     }
-    const byRecency = (a: PageMetaLite, b: PageMetaLite) => b.updatedAt - a.updatedAt;
+    for (const id of retitled) {
+      for (const source of this.backrefs.get(id) ?? []) pages.add(source);
+      for (const database of this.relationRefs.get(id) ?? []) databases.add(database);
+    }
+    const byRecency = (a: string, b: string) =>
+      (this.meta.get(b)?.updatedAt ?? 0) - (this.meta.get(a)?.updatedAt ?? 0);
+    const ofKind = (kind: PageKind) => (id: string) => this.meta.get(id)?.kind === kind;
     return {
-      pages: summary.pages.sort(byRecency).map((page) => page.id),
-      databases: summary.databases.sort(byRecency).map((page) => page.id),
+      pages: [...pages].filter(ofKind('page')).sort(byRecency),
+      databases: [...databases].filter(ofKind('database')).sort(byRecency),
     };
+  }
+
+  /** The title the index knows a page by: its metadata, or the title it was indexed with. */
+  private knownTitle(id: string): string | undefined {
+    return this.meta.get(id)?.title ?? this.indexedTitles.get(id);
   }
 
   /** Removes pages from the index (their content, row values and links). */
@@ -246,6 +283,7 @@ export class IndexCore {
       this.meta.delete(id);
       this.foldedTitles.delete(id);
       this.dbFingerprints.delete(id);
+      if (this.dbRelations.has(id)) this.setRelations(id, new Set());
       this.indexedTitles.delete(id);
       this.tagKeyCache.delete(id);
       if (this.mini.has(id)) this.mini.discard(id);
@@ -287,20 +325,47 @@ export class IndexCore {
   }
 
   /** Replaces the row values of a database (rows missing from `values` lose theirs). */
-  setRowValues(databaseId: string, values: ReadonlyMap<string, string>, fingerprint: number): void {
+  setRowValues(
+    databaseId: string,
+    values: ReadonlyMap<string, RowValues>,
+    fingerprint: number,
+  ): void {
     for (const [rowId, record] of [...this.rows]) {
       if (record.databaseId === databaseId && !values.has(rowId)) {
         this.rows.delete(rowId);
         this.reindex(rowId);
       }
     }
-    for (const [rowId, text] of values) {
+    const targets = new Set<string>();
+    for (const [rowId, { text, relations }] of values) {
+      for (const target of relations) targets.add(target);
       const previous = this.rows.get(rowId);
+      this.rows.set(rowId, { databaseId, text, relations });
       if (previous?.text === text && previous.databaseId === databaseId) continue;
-      this.rows.set(rowId, { databaseId, text });
       this.reindex(rowId);
     }
+    this.setRelations(databaseId, targets);
     this.dbFingerprints.set(databaseId, fingerprint);
+  }
+
+  /** Records the pages a database's relation cells point to. */
+  private setRelations(databaseId: string, targets: ReadonlySet<string>): void {
+    for (const target of this.dbRelations.get(databaseId) ?? []) {
+      if (targets.has(target)) continue;
+      const databases = this.relationRefs.get(target);
+      databases?.delete(databaseId);
+      if (databases?.size === 0) this.relationRefs.delete(target);
+    }
+    for (const target of targets) {
+      let databases = this.relationRefs.get(target);
+      if (!databases) {
+        databases = new Set();
+        this.relationRefs.set(target, databases);
+      }
+      databases.add(databaseId);
+    }
+    if (targets.size > 0) this.dbRelations.set(databaseId, new Set(targets));
+    else this.dbRelations.delete(databaseId);
   }
 
   /** Forgets everything (before a rebuild). */
@@ -312,6 +377,8 @@ export class IndexCore {
     this.dbFingerprints.clear();
     this.indexedTitles.clear();
     this.backrefs.clear();
+    this.relationRefs.clear();
+    this.dbRelations.clear();
     this.tagKeyCache.clear();
     this.mini = new MiniSearch<IndexedDoc>(miniOptions());
   }

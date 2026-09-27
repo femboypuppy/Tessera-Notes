@@ -21,12 +21,15 @@ export interface IndexServiceOptions {
   transport?: () => IndexTransport | Promise<IndexTransport>;
   /** Persist the index between sessions. Default true. */
   persist?: boolean;
+  /** Delay before the pages that show a changed title are read again. Default 1000 ms. */
+  retitleDelayMs?: number;
 }
 
 function acquire(context: IndexServiceContext, options: IndexServiceOptions) {
   return IndexHost.acquire(context, {
     transport: options.transport ?? createBrowserTransport,
     persist: options.persist ?? true,
+    ...(options.retitleDelayMs !== undefined ? { retitleDelayMs: options.retitleDelayMs } : {}),
   });
 }
 
