@@ -123,11 +123,13 @@ pnpm --filter @tessera/desktop tauri build --config '{"bundle":{"createUpdaterAr
 
 ## Icons
 
-`src-tauri/icons/` is generated from `src-tauri/icons/source.svg` (a placeholder built from the
-shell's mosaic mark; Agent 10 designs the final logo). To regenerate every size:
+`src-tauri/icons/` is generated from `src-tauri/icons/source.svg`, the app icon (the leaf mark on
+a white rounded square) that `pnpm --dir docs brand` writes from `docs/scripts/brand.ts` before it
+runs:
 
 ```bash
 pnpm --filter @tessera/desktop icons    # tauri icon + removes the mobile sizes
 ```
 
-Replace `source.svg` (1024×1024, transparent corners) and run it again.
+Change the icon in `docs/scripts/brand.ts`, not here: `pnpm --dir docs brand` rewrites
+`source.svg` (1024×1024, transparent corners) and regenerates every size.

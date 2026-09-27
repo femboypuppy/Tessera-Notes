@@ -15,6 +15,8 @@ test('every brand SVG is well-formed SVG with a viewBox and an accessible name',
   expect(SVGS.sort()).toEqual([
     'app-icon.svg',
     'favicon.svg',
+    'logo-mark-dark.svg',
+    'logo-mark-light.svg',
     'logo-mark.svg',
     'wordmark-dark.svg',
     'wordmark-light.svg',
@@ -37,7 +39,7 @@ test('every brand SVG is well-formed SVG with a viewBox and an accessible name',
       tag: 'svg',
       namespace: 'http://www.w3.org/2000/svg',
       viewBox: expect.stringMatching(/^0 0 [\d.]+ 32$/),
-      label: 'Tessera',
+      label: 'Tessera Notes',
     });
   }
 });
@@ -64,7 +66,7 @@ test('the logo and app icon render at 16, 32 and 64 px with visible tiles', asyn
         },
         { src: dataUrl, size },
       );
-      // The mark's solid T covers about a third of its box; the icon is almost fully opaque.
+      // The mark's four tiles cover most of its box; the icon is almost fully opaque.
       if (name === 'logo-mark.svg') expect(coverage, `${name} @${size}`).toBeGreaterThan(0.2);
       else expect(coverage, `${name} @${size}`).toBeGreaterThan(0.85);
     }
@@ -91,7 +93,13 @@ test('the favicon set has every size', () => {
 });
 
 test('the docs site uses the same logo and favicon', () => {
-  for (const name of ['logo-mark.svg', 'favicon.svg', 'favicon.ico']) {
+  for (const name of [
+    'logo-mark.svg',
+    'logo-mark-light.svg',
+    'logo-mark-dark.svg',
+    'favicon.svg',
+    'favicon.ico',
+  ]) {
     expect(
       readFileSync(repoPath(`docs/public/${name}`)).equals(
         readFileSync(repoPath(`assets/brand/${name}`)),
@@ -99,6 +107,22 @@ test('the docs site uses the same logo and favicon', () => {
       name,
     ).toBe(true);
   }
+});
+
+test('the web app and the desktop app use the same icons', () => {
+  const same = (copy: string, original: string) =>
+    expect(readFileSync(repoPath(copy)).equals(readFileSync(repoPath(original))), copy).toBe(true);
+  same('apps/web/public/favicon.svg', 'assets/brand/favicon.svg');
+  same('apps/web/public/favicon.ico', 'assets/brand/favicon.ico');
+  same('apps/web/public/apple-touch-icon.png', 'assets/brand/png/app-icon-180.png');
+  // `tauri icon` renders the desktop icons from the app icon at 1024 px.
+  expect(
+    readRepoFile('apps/desktop/src-tauri/icons/source.svg').replace(
+      ' width="1024" height="1024"',
+      ' width="512" height="512"',
+    ),
+  ).toBe(readRepoFile('assets/brand/app-icon.svg'));
+  expect(pngSize('apps/desktop/src-tauri/icons/icon.png')).toEqual({ width: 512, height: 512 });
 });
 
 test('docs screenshots exist in both themes at 1440×900', () => {

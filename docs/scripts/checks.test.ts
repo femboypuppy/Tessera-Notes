@@ -3,7 +3,7 @@
  *
  * - the GitHub issue forms are valid YAML with the structure GitHub requires;
  * - the demo workspace is valid markdown and CSV, and every wikilink in it resolves;
- * - the brand colors come from the design tokens.
+ * - the brand colors come from the design tokens, and the logo keeps its leaf legible.
  *
  * Run with `pnpm --dir docs test`. `pnpm --dir docs build` runs them first.
  */
@@ -13,7 +13,15 @@ import path from 'node:path';
 import { describe, it } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { parseDocument } from 'yaml';
-import { brandColorsFromTokens, markSvg, TILES } from './brand.ts';
+import {
+  brandColorsFromTokens,
+  markSvg,
+  markTones,
+  mixColors,
+  tilePath,
+  TILES,
+  type MarkVariant,
+} from './brand.ts';
 import { parseCsv } from './csv.ts';
 
 const repoDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -363,28 +371,79 @@ describe('csv parser', () => {
   });
 });
 
+/** WCAG relative luminance of a `#rrggbb` color. */
+function luminance(hex: string): number {
+  const [r = 0, g = 0, b = 0] = [1, 3, 5].map((i) => {
+    const c = Number.parseInt(hex.slice(i, i + 2), 16) / 255;
+    return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+  });
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+
+function contrast(a: string, b: string): number {
+  const [high = 0, low = 0] = [luminance(a), luminance(b)].sort((x, y) => y - x);
+  return (high + 0.05) / (low + 0.05);
+}
+
 describe('brand', () => {
   const tokens = readFileSync(path.join(repoDir, 'packages/ui/src/styles/tokens.css'), 'utf8');
+  const colors = brandColorsFromTokens(tokens);
 
   it('takes its colors from the design tokens', () => {
-    const colors = brandColorsFromTokens(tokens);
     assert.equal(
       colors.accent,
       /--tess-accent:\s*(#[0-9a-f]{6})/i.exec(tokens)?.[1]?.toLowerCase(),
     );
     assert.match(colors.fgDark, /^#[0-9a-f]{6}$/);
     assert.notEqual(colors.fgLight, colors.fgDark);
+    assert.notEqual(colors.accentTextLight, colors.accentTextDark);
   });
 
-  it('draws a T of five solid tiles among nine', () => {
-    assert.equal(TILES.length, 9);
-    assert.equal(TILES.filter((tile) => tile.opacity === 1).length, 5);
-    const svg = markSvg(brandColorsFromTokens(tokens));
-    assert.equal(svg.match(/<rect /g)?.length, 9);
+  it('draws a leaf: quarter-round tiles on one diagonal, squares on the other', () => {
+    assert.deepEqual(
+      TILES.map((tile) => `${tile.col}${tile.row} ${tile.shape} ${tile.tone}`),
+      ['00 quarter leaf', '10 square tile', '01 square tile', '11 quarter leaf'],
+    );
+    assert.equal(markSvg(colors, 32, 'light').match(/<path /g)?.length, 4);
   });
 
-  it('matches the committed logo', () => {
-    const committed = readFileSync(path.join(repoDir, 'assets/brand/logo-mark.svg'), 'utf8');
-    assert.equal(committed.trim(), markSvg(brandColorsFromTokens(tokens), 64));
+  it('keeps the leaf the stronger tone on every background, so it never reads as four squares', () => {
+    // At 16 px the mark must not look like a 2×2 of equal squares. The first proposal (tones 1.8:1
+    // apart, the squares brighter than the leaf in the dark theme) did.
+    const cases: [MarkVariant, string][] = [
+      ['light', colors.bgLight],
+      ['dark', colors.bgDark],
+      ['dark', '#0d1117'], // GitHub's dark theme (the README)
+      ['universal', colors.bgLight],
+      ['universal', colors.bgDark],
+    ];
+    for (const [variant, background] of cases) {
+      const tones = markTones(colors, variant);
+      const tile = mixColors(tones.tile, background, tones.tileOpacity);
+      const where = `${variant} on ${background}`;
+      assert.ok(contrast(tones.leaf, background) > contrast(tile, background), where);
+      assert.ok(contrast(tones.leaf, tile) >= 1.85, `${where}: the tones are too close`);
+      assert.ok(contrast(tile, background) >= 1.4, `${where}: the squares disappear`);
+    }
+  });
+
+  it('matches the committed logos', () => {
+    const committed = (name: string) =>
+      readFileSync(path.join(repoDir, 'assets/brand', name), 'utf8').trim();
+    assert.equal(committed('logo-mark.svg'), markSvg(colors, 64));
+    assert.equal(committed('logo-mark-light.svg'), markSvg(colors, 64, 'light'));
+    assert.equal(committed('logo-mark-dark.svg'), markSvg(colors, 64, 'dark'));
+    assert.equal(committed('favicon.svg'), markSvg(colors, 32));
+  });
+
+  it("matches the app's LogoMark", () => {
+    const source = readFileSync(path.join(repoDir, 'apps/web/src/app/LogoMark.tsx'), 'utf8');
+    const drawn = [...source.matchAll(/tone: '(leaf|tile)',\s*d: '([^']+)'/g)].map(
+      ([, tone, d]) => `${tone} ${d}`,
+    );
+    assert.deepEqual(
+      drawn,
+      TILES.map((tile) => `${tile.tone} ${tilePath(tile)}`),
+    );
   });
 });

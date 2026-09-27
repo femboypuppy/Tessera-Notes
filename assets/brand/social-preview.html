@@ -7,7 +7,7 @@
 <html lang="en" data-theme="dark">
   <head>
     <meta charset="UTF-8" />
-    <title>Tessera social preview</title>
+    <title>Tessera Notes social preview</title>
     <style>
       @font-face {
         font-family: 'Inter Variable';
@@ -75,10 +75,16 @@
         filter: drop-shadow(0 12px 32px rgb(91 91 214 / 0.35));
       }
       h1 {
-        font-size: 92px;
+        font-size: 84px;
         font-weight: 700;
         letter-spacing: -0.035em;
         line-height: 1;
+        white-space: nowrap;
+      }
+      /* As in the wordmark: "Notes" lighter and muted. */
+      h1 span {
+        font-weight: 400;
+        color: var(--tess-fg-muted);
       }
       .tagline {
         font-size: 42px;
@@ -127,7 +133,7 @@
     <main>
       <div class="brand">
         <img src="app-icon.svg" alt="" />
-        <h1>Tessera</h1>
+        <h1>Tessera <span>Notes</span></h1>
       </div>
       <p class="tagline">
         Your notes, your server.<br /><span>Notion's power, Obsidian's freedom.</span>
@@ -141,7 +147,8 @@
     </main>
     <footer>github.com/femboypuppy/Tessera-Notes</footer>
     <script>
-      // A deterministic mosaic (same seed, same picture), colored with the tag tokens.
+      // A deterministic mosaic (same seed, same picture), colored with the tag tokens. Some tiles
+      // are quarter-rounds on the same diagonal as the logo's leaf.
       (function drawMosaic() {
         const root = document.getElementById('mosaic');
         const style = getComputedStyle(document.documentElement);
@@ -173,6 +180,9 @@
             tile.style.top = `${row * step - 24}px`;
             tile.style.background = color;
             tile.style.opacity = String(opacity);
+            const shape = random();
+            if (shape < 0.16) tile.style.borderTopLeftRadius = '100%';
+            else if (shape < 0.32) tile.style.borderBottomRightRadius = '100%';
             root.append(tile);
           }
         }
