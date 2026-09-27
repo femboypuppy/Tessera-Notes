@@ -1,5 +1,5 @@
-import type { AppContext, MoveTarget, PageMeta, PageTreeNode } from '@tessera/core';
-import { useAppContext, usePages } from '@tessera/core/react';
+import type { AppContext, MoveTarget, PageMeta, PagesSnapshot } from '@tessera/core';
+import { useAppContext, usePages, usePagesSelector } from '@tessera/core/react';
 import {
   cn,
   ContextMenu,
@@ -92,26 +92,56 @@ function useExpanded(ctx: AppContext) {
   return [expanded, update] as const;
 }
 
-function flatten(tree: readonly PageTreeNode[], expanded: ReadonlySet<string>): Row[] {
+/**
+ * The rows the tree shows: the top-level pages and the children of expanded ones. Collapsed
+ * branches are not walked, so pages added inside them (an import adds thousands) cost nothing.
+ */
+function visibleRows(pages: PagesSnapshot, expanded: ReadonlySet<string>): Row[] {
   const rows: Row[] = [];
-  const visit = (nodes: readonly PageTreeNode[], parentId: string | null) => {
-    nodes.forEach((node, index) => {
-      const hasChildren = node.children.length > 0;
-      const isExpanded = hasChildren && expanded.has(node.page.id);
+  const seen = new Set<string>();
+  const visit = (parentId: string | null, depth: number) => {
+    const siblings = pages.children(parentId).filter((page) => !seen.has(page.id));
+    siblings.forEach((page, index) => {
+      seen.add(page.id);
+      const hasChildren = pages.children(page.id).length > 0;
+      const isExpanded = hasChildren && expanded.has(page.id);
       rows.push({
-        page: node.page,
-        depth: node.depth,
+        page,
+        depth,
         parentId,
         hasChildren,
         expanded: isExpanded,
         position: index + 1,
-        siblings: nodes.length,
+        siblings: siblings.length,
       });
-      if (isExpanded) visit(node.children, node.page.id);
+      if (isExpanded) visit(page.id, depth + 1);
     });
   };
-  visit(tree, null);
+  visit(null, 0);
   return rows;
+}
+
+/** Rows show the same thing (page objects are kept while unchanged). */
+function sameRowData(a: Row, b: Row): boolean {
+  return (
+    a.page === b.page &&
+    a.depth === b.depth &&
+    a.parentId === b.parentId &&
+    a.hasChildren === b.hasChildren &&
+    a.expanded === b.expanded &&
+    a.position === b.position &&
+    a.siblings === b.siblings
+  );
+}
+
+function sameRows(a: readonly Row[], b: readonly Row[]): boolean {
+  return (
+    a.length === b.length &&
+    a.every((row, index) => {
+      const other = b[index];
+      return other !== undefined && sameRowData(row, other);
+    })
+  );
 }
 
 /**
@@ -273,6 +303,119 @@ interface TreeRowProps {
   };
 }
 
+/** The expand toggle, icon and title of a row. */
+const RowLabel = memo(function RowLabel({
+  page,
+  hasChildren,
+  expanded,
+  onToggle,
+}: {
+  page: PageMeta;
+  hasChildren: boolean;
+  expanded: boolean;
+  onToggle: (id: string) => void;
+}) {
+  return (
+    <>
+      <button
+        type="button"
+        tabIndex={-1}
+        aria-label={expanded ? t('collapse') : t('expand')}
+        onClick={(event) => {
+          event.stopPropagation();
+          onToggle(page.id);
+        }}
+        className={cn(
+          'inline-flex size-5 shrink-0 items-center justify-center rounded-sm text-fg-subtle hover:bg-active hover:text-fg',
+          !hasChildren && 'invisible',
+        )}
+      >
+        <ChevronRight
+          className={cn('duration-fast size-3.5 transition-transform', expanded && 'rotate-90')}
+          aria-hidden="true"
+        />
+      </button>
+      <PageIcon page={page} />
+      <span className={cn('min-w-0 flex-1 truncate', !page.title.trim() && 'text-fg-subtle')}>
+        {displayTitle(page)}
+      </span>
+    </>
+  );
+});
+
+interface RowMenuProps {
+  page: PageMeta;
+  parentId: string | null;
+  onExpand: (id: string) => void;
+}
+
+/** The "…" menu and the add button, shown on hover and focus. */
+const RowActions = memo(function RowActions({ page, parentId, onExpand }: RowMenuProps) {
+  const actions = usePageActions(page, onExpand);
+  return (
+    <span className="duration-fast flex shrink-0 items-center opacity-0 transition-opacity group-focus-within/item:opacity-100 group-hover/item:opacity-100 has-[[data-state=open]]:opacity-100">
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <button
+            type="button"
+            tabIndex={-1}
+            aria-label={t('moreActions')}
+            onClick={(event) => event.stopPropagation()}
+            className="inline-flex size-5 items-center justify-center rounded-sm text-fg-subtle hover:bg-active hover:text-fg data-[state=open]:bg-active"
+          >
+            <MoreHorizontal className="size-3.5" aria-hidden="true" />
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start" onClick={(event) => event.stopPropagation()}>
+          <MenuItems
+            page={page}
+            parentId={parentId}
+            onExpand={onExpand}
+            actions={actions}
+            Item={DropdownMenuItem}
+            Separator={DropdownMenuSeparator}
+          />
+        </DropdownMenuContent>
+      </DropdownMenu>
+      {actions.viewOnly ? null : (
+        <button
+          type="button"
+          tabIndex={-1}
+          aria-label={t('newSubpage')}
+          onClick={(event) => {
+            event.stopPropagation();
+            actions.addChild();
+          }}
+          className="inline-flex size-5 items-center justify-center rounded-sm text-fg-subtle hover:bg-active hover:text-fg"
+        >
+          <Plus className="size-3.5" aria-hidden="true" />
+        </button>
+      )}
+    </span>
+  );
+});
+
+/** The row's context menu. */
+const RowContextMenu = memo(function RowContextMenu({ page, parentId, onExpand }: RowMenuProps) {
+  const actions = usePageActions(page, onExpand);
+  return (
+    <ContextMenuContent>
+      <MenuItems
+        page={page}
+        parentId={parentId}
+        onExpand={onExpand}
+        actions={actions}
+        Item={ContextMenuItem}
+        Separator={ContextMenuSeparator}
+      />
+    </ContextMenuContent>
+  );
+});
+
+/**
+ * One row. Its label and menus are memoized apart from the treeitem: when a page is added at the
+ * top level, every top-level row's `aria-setsize` changes, and only that attribute is redrawn.
+ */
 const TreeRow = memo(function TreeRow({
   row,
   active,
@@ -286,9 +429,8 @@ const TreeRow = memo(function TreeRow({
   dragHandlers,
 }: TreeRowProps) {
   const ctx = useAppContext();
+  const viewOnly = useViewOnly();
   const { page } = row;
-  const actions = usePageActions(page, onExpand);
-  const title = displayTitle(page);
   const indicator: ReactNode =
     dropZone === 'before' || dropZone === 'after' ? (
       <span
@@ -310,11 +452,11 @@ const TreeRow = memo(function TreeRow({
           aria-posinset={row.position}
           aria-expanded={row.hasChildren ? row.expanded : undefined}
           aria-selected={active}
-          aria-label={title}
+          aria-label={displayTitle(page)}
           tabIndex={focused ? 0 : -1}
           data-page-id={page.id}
           data-active={active || undefined}
-          draggable={!actions.viewOnly}
+          draggable={!viewOnly}
           onDragStart={(event) => dragHandlers.onDragStart(event, row)}
           onDragOver={(event) => dragHandlers.onDragOver(event, row)}
           onDrop={(event) => dragHandlers.onDrop(event, row)}
@@ -331,98 +473,24 @@ const TreeRow = memo(function TreeRow({
           style={{ paddingLeft: 4 + row.depth * INDENT }}
         >
           {indicator}
-          <button
-            type="button"
-            tabIndex={-1}
-            aria-label={row.expanded ? t('collapse') : t('expand')}
-            onClick={(event) => {
-              event.stopPropagation();
-              onToggle(page.id);
-            }}
-            className={cn(
-              'inline-flex size-5 shrink-0 items-center justify-center rounded-sm text-fg-subtle hover:bg-active hover:text-fg',
-              !row.hasChildren && 'invisible',
-            )}
-          >
-            <ChevronRight
-              className={cn(
-                'duration-fast size-3.5 transition-transform',
-                row.expanded && 'rotate-90',
-              )}
-              aria-hidden="true"
-            />
-          </button>
-          <PageIcon page={page} />
-          <span className={cn('min-w-0 flex-1 truncate', !page.title.trim() && 'text-fg-subtle')}>
-            {title}
-          </span>
-          <span className="duration-fast flex shrink-0 items-center opacity-0 transition-opacity group-focus-within/item:opacity-100 group-hover/item:opacity-100 has-[[data-state=open]]:opacity-100">
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <button
-                  type="button"
-                  tabIndex={-1}
-                  aria-label={t('moreActions')}
-                  onClick={(event) => event.stopPropagation()}
-                  className="inline-flex size-5 items-center justify-center rounded-sm text-fg-subtle hover:bg-active hover:text-fg data-[state=open]:bg-active"
-                >
-                  <MoreHorizontal className="size-3.5" aria-hidden="true" />
-                </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="start" onClick={(event) => event.stopPropagation()}>
-                <MenuItems
-                  page={page}
-                  parentId={row.parentId}
-                  onExpand={onExpand}
-                  actions={actions}
-                  Item={DropdownMenuItem}
-                  Separator={DropdownMenuSeparator}
-                />
-              </DropdownMenuContent>
-            </DropdownMenu>
-            {actions.viewOnly ? null : (
-              <button
-                type="button"
-                tabIndex={-1}
-                aria-label={t('newSubpage')}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  actions.addChild();
-                }}
-                className="inline-flex size-5 items-center justify-center rounded-sm text-fg-subtle hover:bg-active hover:text-fg"
-              >
-                <Plus className="size-3.5" aria-hidden="true" />
-              </button>
-            )}
-          </span>
+          <RowLabel
+            page={page}
+            hasChildren={row.hasChildren}
+            expanded={row.expanded}
+            onToggle={onToggle}
+          />
+          <RowActions page={page} parentId={row.parentId} onExpand={onExpand} />
         </div>
       </ContextMenuTrigger>
-      <ContextMenuContent>
-        <MenuItems
-          page={page}
-          parentId={row.parentId}
-          onExpand={onExpand}
-          actions={actions}
-          Item={ContextMenuItem}
-          Separator={ContextMenuSeparator}
-        />
-      </ContextMenuContent>
+      <RowContextMenu page={page} parentId={row.parentId} onExpand={onExpand} />
     </ContextMenu>
   );
 }, sameRow);
 
 /** A row re-renders only when what it shows changed (page objects are kept while unchanged). */
 function sameRow(before: TreeRowProps, after: TreeRowProps): boolean {
-  const a = before.row;
-  const b = after.row;
   return (
-    a.page === b.page &&
-    a.depth === b.depth &&
-    a.parentId === b.parentId &&
-    a.hasChildren === b.hasChildren &&
-    a.expanded === b.expanded &&
-    a.position === b.position &&
-    a.siblings === b.siblings &&
+    sameRowData(before.row, after.row) &&
     before.active === after.active &&
     before.focused === after.focused &&
     before.dropZone === after.dropZone &&
@@ -442,7 +510,6 @@ function sameRow(before: TreeRowProps, after: TreeRowProps): boolean {
  */
 export function PageTree() {
   const ctx = useAppContext();
-  const snapshot = usePages();
   const currentPageId = useUiStore((state) => state.currentPageId);
   const [expanded, updateExpanded] = useExpanded(ctx);
   const [focusedId, setFocusedId] = useState<string | null>(null);
@@ -455,13 +522,14 @@ export function PageTree() {
   const treeRef = useRef<HTMLDivElement>(null);
   const viewOnly = useViewOnly();
 
-  const tree = snapshot.tree();
-  const rows = useMemo(() => flatten(tree, expanded), [tree, expanded]);
+  // Handlers read the pages as they are when they run; rendering follows the visible rows only.
+  const pages = () => ctx.workspace.pages.getSnapshot();
+  const rows = usePagesSelector((snapshot) => visibleRows(snapshot, expanded), sameRows);
 
   // Reveal the open page: expand its ancestors.
   useEffect(() => {
     if (!currentPageId) return;
-    const ancestors = snapshot.ancestors(currentPageId);
+    const ancestors = pages().ancestors(currentPageId);
     if (ancestors.some((page) => !expanded.has(page.id))) {
       updateExpanded((next) => {
         for (const page of ancestors) next.add(page.id);
@@ -511,7 +579,7 @@ export function PageTree() {
       if (attempt(() => ctx.workspace.movePage(row.page.id, target))) focusRow(row.page.id);
     };
     if (event.altKey && event.shiftKey && !viewOnly) {
-      const siblings = snapshot.children(row.parentId);
+      const siblings = pages().children(row.parentId);
       const at = siblings.findIndex((page) => page.id === row.page.id);
       const handled: Record<string, (() => void) | undefined> = {
         ArrowUp:
@@ -533,7 +601,7 @@ export function PageTree() {
           row.parentId !== null
             ? () =>
                 move({
-                  parentId: snapshot.effectiveParentId(row.parentId ?? ''),
+                  parentId: pages().effectiveParentId(row.parentId ?? ''),
                   position: { after: row.parentId ?? '' },
                 })
             : undefined,
@@ -584,7 +652,9 @@ export function PageTree() {
 
   const isInvalidTarget = (draggedId: string, target: Row) =>
     target.page.id === draggedId ||
-    snapshot.ancestors(target.page.id).some((page) => page.id === draggedId);
+    pages()
+      .ancestors(target.page.id)
+      .some((page) => page.id === draggedId);
 
   const dragHandlers = {
     onDragStart: (event: DragEvent<HTMLDivElement>, row: Row) => {

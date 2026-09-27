@@ -1,0 +1,11 @@
+{
+  "id": "looper",
+  "name": "Looper",
+  "version": "1.0.0",
+  "apiVersion": 1,
+  "author": "Security tests",
+  "description": "A panel and a block that never give the app its thread back. Used by e2e/plugins/sandbox.spec.ts.",
+  "entry": "main.js",
+  "permissions": ["ui:panels", "ui:blocks"],
+  "icon": "🌀"
+}

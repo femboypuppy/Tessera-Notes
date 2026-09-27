@@ -164,6 +164,34 @@ describe('DatabaseStore', () => {
     expect(fresh.store).not.toBe(store);
     fresh.release();
   });
+
+  it('stays quiet while pages outside the database change', async () => {
+    const ref = await database();
+    const row = await addRow(app.ctx, ref, { title: 'Launch checklist' });
+    const { store, release } = acquireDatabaseStore(ref.doc, app.ctx.workspace.pages);
+    let notified = 0;
+    const stop = store.subscribe(() => {
+      notified += 1;
+    });
+    const before = store.getSnapshot();
+
+    // An import creates pages elsewhere; the rows are what they were.
+    const folder = app.ctx.workspace.createPage({ title: 'Imported notes' });
+    app.ctx.workspace.createPage({ title: 'Mission log', parentId: folder.id });
+    app.ctx.workspace.renamePage(folder.id, 'Imported');
+    expect(notified).toBe(0);
+    expect(store.getSnapshot()).toBe(before);
+
+    // Its rows' pages still come through.
+    app.ctx.workspace.renamePage(row.id, 'Launch day');
+    expect(notified).toBe(1);
+    expect(store.getSnapshot().rows.map((candidate) => candidate.title)).toEqual(['Launch day']);
+    app.ctx.workspace.trashPage(row.id);
+    expect(notified).toBe(2);
+    expect(store.getSnapshot().rows[0]?.trashed).toBe(true);
+    stop();
+    release();
+  });
 });
 
 describe('addRowsInBulk', () => {

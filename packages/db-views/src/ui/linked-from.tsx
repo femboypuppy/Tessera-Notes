@@ -1,4 +1,5 @@
-import { useAppContext, usePages } from '@tessera/core/react';
+import type { PagesSnapshot } from '@tessera/core';
+import { useAppContext, usePagesSelector } from '@tessera/core/react';
 import { ArrowUpRight } from 'lucide-react';
 import { useEffect, useSyncExternalStore } from 'react';
 import { t } from '../i18n';
@@ -11,15 +12,26 @@ import { displayTitle } from './common';
  */
 export function LinkedFrom({ pageId }: { pageId: string }) {
   const ctx = useAppContext();
-  const pages = usePages();
   const index = backReferenceIndexFor(ctx);
   useEffect(() => {
     void index.ensureBuilt().catch(() => undefined);
   }, [index]);
   useSyncExternalStore(index.subscribe, index.getVersion, index.getVersion);
-  const refs = index
-    .refsTo(pageId)
-    .filter((ref) => pages.has(ref.rowId) && !pages.isTrashed(ref.rowId) && ref.rowId !== pageId);
+  const all = index.refsTo(pageId);
+  // The snapshot moves on only when a row or database named here changes, not with every page.
+  const pages = usePagesSelector(
+    (snapshot) => snapshot,
+    (a: PagesSnapshot, b: PagesSnapshot) =>
+      all.every(
+        (ref) =>
+          a.get(ref.rowId) === b.get(ref.rowId) &&
+          a.isTrashed(ref.rowId) === b.isTrashed(ref.rowId) &&
+          a.get(ref.databaseId) === b.get(ref.databaseId),
+      ),
+  );
+  const refs = all.filter(
+    (ref) => pages.has(ref.rowId) && !pages.isTrashed(ref.rowId) && ref.rowId !== pageId,
+  );
   if (refs.length === 0) return null;
   return (
     <section aria-label={t('linkedFrom')} className="mt-4 flex flex-col gap-1">

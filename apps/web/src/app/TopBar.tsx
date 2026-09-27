@@ -12,7 +12,7 @@ import {
   useCommands,
   useContributions,
   usePage,
-  usePages,
+  usePagesSelector,
 } from '@tessera/core/react';
 import {
   cn,
@@ -270,7 +270,7 @@ export function TopBar() {
   // Pages in the trash (directly or through an ancestor) are read-only, and so is everything for
   // a viewer (the server refuses their changes).
   const viewOnly = useViewOnly();
-  const readOnly = usePages().isTrashed(pageId ?? '') || viewOnly;
+  const readOnly = usePagesSelector((pages) => pages.isTrashed(pageId ?? '')) || viewOnly;
   const items = useContributions('topBarItems');
   const headerActions = useContributions('pageHeaderActions');
   const panels = usePagePanels(page);

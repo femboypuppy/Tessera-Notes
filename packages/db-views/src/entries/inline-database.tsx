@@ -1,5 +1,5 @@
 import type { BlockRendererProps, JsonValue } from '@tessera/core';
-import { usePages } from '@tessera/core/react';
+import { usePagesSelector } from '@tessera/core/react';
 import { Callout, EmptyState } from '@tessera/ui';
 import { Database } from 'lucide-react';
 import { t } from '../i18n';
@@ -22,7 +22,9 @@ export default function InlineDatabase({
   readOnly,
   updateData,
 }: BlockRendererProps) {
-  const pages = usePages();
+  const trashed = usePagesSelector(
+    (pages) => !!databaseId && pages.has(databaseId) && pages.isTrashed(databaseId),
+  );
   if (!databaseId) {
     return (
       <EmptyState
@@ -32,7 +34,6 @@ export default function InlineDatabase({
       />
     );
   }
-  const trashed = pages.has(databaseId) && pages.isTrashed(databaseId);
   return (
     <div className="flex flex-col gap-2" data-inline-database={databaseId}>
       {trashed ? <Callout tone="warning">{t('trashedDatabase')}</Callout> : null}

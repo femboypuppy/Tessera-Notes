@@ -8,8 +8,9 @@ hero:
   text: Your notes, your server.
   tagline: "Notion's blocks and databases, Obsidian's links and graph. Local-first, open source, and yours to self-host."
   image:
-    src: /logo-mark.svg
-    alt: The Tessera logo, a mosaic of tiles forming a T
+    light: /logo-mark-light.svg
+    dark: /logo-mark-dark.svg
+    alt: The Tessera Notes logo, a leaf made of four mosaic tiles
   actions:
     - theme: brand
       text: Get started

@@ -18,6 +18,7 @@ import {
   useSyncExternalStore,
   type ReactNode,
 } from 'react';
+import { useSyncExternalStoreWithSelector } from 'use-sync-external-store/with-selector';
 import type { JsonValue } from '../json';
 import type { PageTreeNode } from '../model/page-index';
 import type { PageMeta } from '../model/page-meta';
@@ -57,7 +58,11 @@ export function useOptionalAppContext(): AppContext | null {
   return useContext(AppContextReact);
 }
 
-/** The current pages snapshot; re-renders on every page change. */
+/**
+ * The current pages snapshot; re-renders on every page change. Components that show a few pages
+ * select them with {@link usePagesSelector} instead: an import changes the pages thousands of
+ * times.
+ */
 export function usePages(): PagesSnapshot {
   const { workspace } = useAppContext();
   return useSyncExternalStore(
@@ -67,21 +72,50 @@ export function usePages(): PagesSnapshot {
   );
 }
 
-/** One page's metadata (undefined when it does not exist). */
-export function usePage(pageId: string | null | undefined): PageMeta | undefined {
-  const snapshot = usePages();
-  return pageId ? snapshot.get(pageId) : undefined;
+/**
+ * Selects from the pages snapshot and re-renders only when the selection changes, as `isEqual`
+ * (default `Object.is`) compares it with the last one. Page objects keep their identity while
+ * they are unchanged, so selecting pages re-renders when one of them changes, not with every
+ * change to the workspace.
+ *
+ * @example
+ * const trashed = usePagesSelector((pages) => pages.isTrashed(pageId));
+ * const favorites = usePagesSelector((pages) => pages.favorites(), sameItems);
+ */
+export function usePagesSelector<T>(
+  select: (pages: PagesSnapshot) => T,
+  isEqual?: (a: T, b: T) => boolean,
+): T {
+  const { workspace } = useAppContext();
+  return useSyncExternalStoreWithSelector(
+    workspace.pages.subscribe,
+    workspace.pages.getSnapshot,
+    workspace.pages.getSnapshot,
+    select,
+    isEqual,
+  );
 }
 
-/** The sidebar tree (trash and database rows excluded). */
+/** True when two lists hold the same items in the same order: `isEqual` for list selectors. */
+export function sameItems<T>(a: readonly T[], b: readonly T[]): boolean {
+  return a.length === b.length && a.every((item, index) => Object.is(item, b[index]));
+}
+
+const NO_PAGES: readonly PageMeta[] = [];
+
+/** One page's metadata (undefined when it does not exist); re-renders when it changes. */
+export function usePage(pageId: string | null | undefined): PageMeta | undefined {
+  return usePagesSelector((pages) => (pageId ? pages.get(pageId) : undefined));
+}
+
+/** The sidebar tree (trash and database rows excluded); re-renders on every page change. */
 export function usePageTree(): readonly PageTreeNode[] {
   return usePages().tree();
 }
 
-/** Ancestors of a page, root first (breadcrumbs). */
+/** Ancestors of a page, root first (breadcrumbs); re-renders when one of them changes. */
 export function useAncestors(pageId: string | null | undefined): readonly PageMeta[] {
-  const snapshot = usePages();
-  return pageId ? snapshot.ancestors(pageId) : [];
+  return usePagesSelector((pages) => (pageId ? pages.ancestors(pageId) : NO_PAGES), sameItems);
 }
 
 /** Result of {@link usePageDoc} and {@link useDatabaseDoc}. */

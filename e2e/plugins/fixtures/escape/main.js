@@ -113,6 +113,47 @@ function uiProbes() {
           document.head.append(script);
         }),
     ),
+    // The host instruments panel code so a loop can be stopped (packages/plugins/src/sandbox/
+    // instrument.ts); code it never saw must not run, and its guard must stay in place.
+    run(
+      'panel: run a script it made itself',
+      async () =>
+        new Promise((resolve) => {
+          const script = document.createElement('script');
+          script.src = URL.createObjectURL(
+            new Blob(['window.madeItself = true;'], { type: 'text/javascript' }),
+          );
+          script.onload = () => resolve(window.madeItself ? 'its own script ran' : null);
+          script.onerror = () => resolve(null);
+          document.head.append(script);
+        }),
+    ),
+    run('panel: import a module it made itself', async () => {
+      const url = URL.createObjectURL(
+        new Blob(['export default 42;'], { type: 'text/javascript' }),
+      );
+      const module = await import(url);
+      return module.default === 42 ? 'its own module ran' : null;
+    }),
+    run('panel: switch off the loop guard', async () => {
+      const name = Object.getOwnPropertyNames(window).find((key) => key.startsWith('$' + '$'));
+      if (!name) return 'there is no guard';
+      const guard = window[name];
+      for (const attempt of [
+        () => {
+          window[name] = () => undefined;
+        },
+        () => delete window[name],
+        () => Object.defineProperty(window, name, { value: () => undefined }),
+      ]) {
+        try {
+          attempt();
+        } catch {
+          // Refused.
+        }
+      }
+      return window[name] === guard ? null : 'replaced the guard';
+    }),
     run('panel: eval', async () => {
       // eslint-disable-next-line no-eval -- the probe checks that the CSP forbids it
       const value = (0, eval)('1 + 1');

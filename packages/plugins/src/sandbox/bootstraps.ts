@@ -143,6 +143,8 @@ export function uiInnerBootstrap(load: ModuleLoader): void {
           console: self.console,
           ResizeObserver: self.ResizeObserver,
           FontFace: self.FontFace,
+          performance: self.performance,
+          MessageChannel: self.MessageChannel,
         }),
       (error: unknown) =>
         port.postMessage({

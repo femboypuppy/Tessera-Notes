@@ -708,10 +708,17 @@ Implementations: `MemorySettingsStore`, `LocalStorageSettingsStore` (cross-tab),
 ### 6.6 React bindings (`@tessera/core/react`)
 
 `AppContextProvider`, `useAppContext`, `useOptionalAppContext`, `usePages` (the reactive page
-index), `usePage(id)`, `usePageTree`, `useAncestors(id)`, `usePageDoc(id)`, `useDatabaseDoc(id)`,
-`useSyncStatus(syncHandle)`, `useEvent(type, handler)`, `useCommands`, `useContributions(kind)`,
+index), `usePagesSelector(select, isEqual?)`, `sameItems`, `usePage(id)`, `usePageTree`,
+`useAncestors(id)`, `usePageDoc(id)`, `useDatabaseDoc(id)`, `useSyncStatus(syncHandle)`,
+`useEvent(type, handler)`, `useCommands`, `useContributions(kind)`,
 `useSetting(store, key, fallback)`, `useCurrentUser`. Never mirror document content into React
 state: read it from Yjs in effects or through TipTap.
+
+`usePages` and `usePageTree` re-render on every page change, and an import makes thousands. A
+component that shows a few pages selects them: `usePagesSelector` re-renders only when its
+selection changes (`Object.is`, or `isEqual`, such as `sameItems` for lists). Page objects keep
+their identity while unchanged, so `usePage(id)` and `useAncestors(id)` re-render only when their
+pages change. Handlers read `ctx.workspace.pages.getSnapshot()` when they run.
 
 ### 6.7 Testing helpers (`@tessera/core/testing`)
 
@@ -925,6 +932,8 @@ Staying in budget:
 - **Plugins** run in sandboxed iframes (`sandbox="allow-scripts"` without `allow-same-origin`) with
   a strict CSP, talk only through a validated postMessage RPC, and get capability-scoped APIs
   checked against their granted permissions on every call. Crashes and timeouts are contained.
+  Panel and block frames may share the app's thread, so their code is instrumented before it
+  runs and stopped after 2 s without a break, and no other script can load in them.
   The frames are `srcdoc` documents, so the app's own policy applies to them too: the server
   sends `script-src 'self' 'nonce-…' blob:` with a fresh nonce per `index.html` response and
   writes it into `<meta property="csp-nonce">` (the desktop app fills the same token with Tauri's
