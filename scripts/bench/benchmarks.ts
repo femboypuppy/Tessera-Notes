@@ -1,9 +1,13 @@
 /**
  * The benchmarks. Each opens the seeded harness (the real app with a generated workspace, see
- * packages/testkit/harness) in a fresh Chromium context and measures in the page. Features that
- * aren't registered yet make their benchmark report "skipped" with the reason.
+ * packages/testkit/harness) in a fresh Chromium context and measures in the page; the first-open
+ * benchmark runs the app on its real storage, in a browser profile on disk of its own. Features
+ * that aren't registered yet make their benchmark report "skipped" with the reason.
  */
-import type { Browser, Page } from '@playwright/test';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { chromium, type Browser, type Page } from '@playwright/test';
 import type { GenerateOptions } from '../../packages/testkit/src/generator';
 import type { HarnessState } from '../../packages/testkit/src/harness-state';
 import {
@@ -18,6 +22,8 @@ import { formatMs, median, percentile } from './stats.ts';
 
 export interface BenchContext {
   browser: Browser;
+  /** False with `--headed` (benchmarks that launch a browser of their own follow it). */
+  headless: boolean;
   harness: HarnessServer;
   /** Repetitions for benchmarks that reload the app. */
   runs: number;
@@ -423,6 +429,16 @@ export const BENCHMARKS: readonly Benchmark[] = [
       };
     },
   },
+  {
+    id: 'first-open',
+    // The real app on IndexedDB: 5,000 imported notes, opened again without the saved search
+    // index (a first open on this device: the indexes read every page) and with it.
+    title:
+      'First open of 5,000 notes from IndexedDB: longest main-thread block in the first minute',
+    async run(context) {
+      return firstOpen(context);
+    },
+  },
 ];
 
 interface ImportRun {
@@ -499,4 +515,237 @@ async function importOnce(context: BenchContext): Promise<ImportRun | { error: s
   } finally {
     await close();
   }
+}
+
+/** The notes a person brings along: 5,000 of them, with databases (as the import benchmark). */
+const NOTES_5000: GenerateOptions = {
+  seed: 'first-open',
+  pages: 5000,
+  databases: 3,
+  rowsPerDatabase: 20,
+};
+
+/** Records long tasks from navigation on (init scripts run before the app's code). */
+const LONG_TASKS_SCRIPT = `globalThis.__longTasks = [];
+new PerformanceObserver((list) => {
+  for (const entry of list.getEntries())
+    globalThis.__longTasks.push({ start: entry.startTime, duration: entry.duration });
+}).observe({ type: 'longtask' });`;
+
+/** How long each open is recorded (longer when the indexes take longer). */
+const FIRST_MINUTE_MS = 60_000;
+
+/** What one open of the workspace did in its first minute. */
+interface OpenRun {
+  /** Navigation → interactive sidebar. */
+  sidebar: number;
+  /** Navigation → every page in the search and link indexes. */
+  indexed: number;
+  /** Docs the indexes read. */
+  docsRead: number;
+  longest: number;
+  /** The longest block once the sidebar was interactive: indexing, not opening the workspace. */
+  longestAfterSidebar: number;
+  longTasks: number;
+  /** Total blocking time: the part of each long task over 50 ms, summed. */
+  blocking: number;
+}
+
+/**
+ * Imports 5,000 generated notes into a real IndexedDB workspace (the harness's
+ * `store=indexeddb`, in a browser profile on disk), then opens it again without the saved search
+ * index (`index=fresh`: a first open on this device, which reads every page) and with it, and
+ * records the first minute of each open.
+ */
+async function firstOpen(context: BenchContext): Promise<BenchOutcome> {
+  const profile = await mkdtemp(path.join(tmpdir(), 'tessera-first-open-'));
+  // A profile on disk, as people have one: Playwright's own contexts keep IndexedDB in memory.
+  const browser = await chromium.launchPersistentContext(profile, {
+    headless: context.headless,
+    viewport: { width: 1440, height: 900 },
+  });
+  try {
+    await browser.addInitScript(KEEP_NAMES_SHIM);
+    await browser.addInitScript(LONG_TASKS_SCRIPT);
+    const page = browser.pages()[0] ?? (await browser.newPage());
+    const url = (fresh: boolean) => {
+      const target = new URL(context.harness.url(NOTES_5000));
+      target.searchParams.set('store', 'indexeddb');
+      if (fresh) target.searchParams.set('index', 'fresh');
+      return target.toString();
+    };
+    context.log('  importing 5,000 notes into a new workspace…');
+    const seeded = await seed(page, url(false));
+    if ('error' in seeded) return { status: 'failed', reason: seeded.error };
+    context.log(`  ${seeded.pages} pages imported in ${formatMs(seeded.duration)}`);
+
+    const fresh: OpenRun[] = [];
+    for (let run = 0; run < context.runs; run += 1) {
+      const measured = await openOnce(page, url(true));
+      fresh.push(measured);
+      context.log(
+        `  first open ${run + 1}: longest ${Math.round(measured.longest)} ms (${Math.round(measured.longestAfterSidebar)} ms once the sidebar was up), ${measured.longTasks} long tasks, every page indexed after ${formatMs(measured.indexed)}`,
+      );
+    }
+    await waitForSavedIndex(page, seeded.workspaceId);
+    const saved = await openOnce(page, url(false));
+    context.log(
+      `  with the saved index: longest ${Math.round(saved.longest)} ms, ${saved.longTasks} long tasks, ${saved.docsRead} docs read`,
+    );
+    return {
+      status: 'ok',
+      value: Math.max(...fresh.map((run) => run.longest)),
+      unit: 'ms',
+      measure: `longest of ${fresh.length} first opens, ${fresh.map((run) => run.longTasks).join(' + ')} long tasks`,
+      details: {
+        pages: String(seeded.pages),
+        'interactive sidebar': median(fresh.map((run) => run.sidebar)),
+        'every page indexed': median(fresh.map((run) => run.indexed)),
+        'docs read': String(fresh.at(-1)?.docsRead ?? 0),
+        'longest block while indexing (after the sidebar)': Math.max(
+          ...fresh.map((run) => run.longestAfterSidebar),
+        ),
+        'total blocking time': median(fresh.map((run) => run.blocking)),
+        'with the saved index: longest block': saved.longest,
+        'with the saved index: long tasks': String(saved.longTasks),
+        'with the saved index: every page indexed': saved.indexed,
+      },
+    };
+  } finally {
+    await browser.close();
+    await rm(profile, { recursive: true, force: true }).catch(() => undefined);
+  }
+}
+
+/** Creates a workspace through onboarding and imports the generated notes into it. */
+async function seed(
+  page: Page,
+  url: string,
+): Promise<{ pages: number; duration: number; workspaceId: string } | { error: string }> {
+  await page.goto(url);
+  await page.getByLabel('Workspace name').fill('Notes');
+  await page.getByRole('button', { name: 'Create an empty workspace' }).click();
+  await page.waitForFunction(() => Boolean(window.__tesseraHarness?.ctx), null, {
+    timeout: 60_000,
+  });
+  const seeded = await page.evaluate(async () => {
+    const harness = window.__tesseraHarness;
+    const ctx = harness?.ctx;
+    if (!harness || !ctx) throw new Error('No workspace context');
+    const encoder = new TextEncoder();
+    const files = harness.markdownFiles().map((file) => {
+      const bytes = encoder.encode(file.content);
+      return {
+        path: file.path,
+        size: bytes.byteLength,
+        text: async () => file.content,
+        bytes: async () => bytes,
+      };
+    });
+    const [best] = await ctx.importers.detect(files);
+    if (!best) return { error: 'No importer recognized the markdown files' } as const;
+    const started = performance.now();
+    const report = await best.importer.run(
+      files,
+      {
+        workspace: ctx.workspace,
+        loadPageDoc: (id) => ctx.loadPageDoc(id),
+        loadDatabaseDoc: (id) => ctx.loadDatabaseDoc(id),
+        assets: ctx.services.assetStore,
+        codec: ctx.services.markdownCodec,
+        parentId: null,
+        rootTitle: 'Notes',
+        currentUser: ctx.currentUser,
+      },
+      () => undefined,
+      new AbortController().signal,
+    );
+    type Idle = { whenIdle?: () => Promise<void> };
+    await (ctx.services.searchIndex as Idle).whenIdle?.();
+    await (ctx.services.linkIndex as Idle).whenIdle?.();
+    await ctx.services.docStore.flush?.();
+    return {
+      pages: report.counts.pages,
+      duration: performance.now() - started,
+      workspaceId: ctx.workspace.info.id,
+    };
+  });
+  if ('error' in seeded) return seeded;
+  await waitForSavedIndex(page, seeded.workspaceId);
+  return seeded;
+}
+
+/** Waits until the indexes saved themselves (10 s after their last change). */
+async function waitForSavedIndex(page: Page, workspaceId: string): Promise<void> {
+  await page.evaluate(async (id) => {
+    const saved = async () => {
+      // Opening a database creates it: only look once the app has.
+      const databases = await indexedDB.databases();
+      if (!databases.some((database) => database.name === 'tessera-search')) return false;
+      const db = await new Promise<IDBDatabase>((resolve, reject) => {
+        const request = indexedDB.open('tessera-search');
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error ?? new Error('Cannot open the saved indexes'));
+      });
+      try {
+        if (!db.objectStoreNames.contains('indexes')) return false;
+        const value = await new Promise<unknown>((resolve, reject) => {
+          const request = db.transaction('indexes').objectStore('indexes').get(id);
+          request.onsuccess = () => resolve(request.result);
+          request.onerror = () => reject(request.error ?? new Error('Cannot read the saved index'));
+        });
+        return value !== undefined;
+      } finally {
+        db.close();
+      }
+    };
+    const deadline = performance.now() + 120_000;
+    while (!(await saved())) {
+      if (performance.now() > deadline) throw new Error('The indexes were never saved');
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+    }
+  }, workspaceId);
+}
+
+/** Opens the workspace and records its first minute (until the indexes are done, if later). */
+async function openOnce(page: Page, url: string): Promise<OpenRun> {
+  await page.goto(url);
+  await page.waitForFunction(
+    () =>
+      window.__tesseraHarness?.timings.sidebarReady != null ||
+      Boolean(window.__tesseraHarness?.error),
+    null,
+    { timeout: 180_000 },
+  );
+  const error = await page.evaluate(() => window.__tesseraHarness?.error ?? null);
+  if (error) throw new Error(`The harness failed to start: ${error}`);
+  return page.evaluate(async (firstMinute) => {
+    const harness = window.__tesseraHarness;
+    const ctx = harness?.ctx;
+    if (!harness || !ctx) throw new Error('No workspace context');
+    type Indexes = { whenIdle?: () => Promise<void>; host?: { docsRead: number } };
+    const search = ctx.services.searchIndex as Indexes;
+    await search.whenIdle?.();
+    await (ctx.services.linkIndex as Indexes).whenIdle?.();
+    const indexed = performance.now();
+    await new Promise((resolve) =>
+      setTimeout(resolve, Math.max(0, firstMinute - performance.now())),
+    );
+    const tasks =
+      (globalThis as { __longTasks?: Array<{ start: number; duration: number }> }).__longTasks ??
+      [];
+    const sidebar = harness.timings.sidebarReady ?? Number.NaN;
+    return {
+      sidebar,
+      indexed,
+      docsRead: search.host?.docsRead ?? 0,
+      longest: Math.max(0, ...tasks.map((task) => task.duration)),
+      longestAfterSidebar: Math.max(
+        0,
+        ...tasks.filter((task) => task.start >= sidebar).map((task) => task.duration),
+      ),
+      longTasks: tasks.length,
+      blocking: tasks.reduce((sum, task) => sum + Math.max(0, task.duration - 50), 0),
+    };
+  }, FIRST_MINUTE_MS);
 }
