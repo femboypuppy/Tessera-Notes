@@ -24,6 +24,9 @@ function setup(...args: Parameters<typeof createTestEditor>) {
   return result;
 }
 
+/** A paragraph with a block ID, as the editor gives the blocks it creates. */
+const block = (blockId: string, text: string) => ({ ...b.paragraph(text), attrs: { blockId } });
+
 describe('editor bound to the page doc', () => {
   it('renders the stored content exactly (kitchen sink)', () => {
     const { editor, doc } = setup({ content: kitchenSinkDoc() });
@@ -165,6 +168,52 @@ describe('editor bound to the page doc', () => {
     typeText(first.editor, ' sharp');
     expect(blockTexts(first.editor)).toEqual(['paragraph:Update: Launch at noon sharp']);
     expect(blockTexts(second.editor)).toEqual(['paragraph:Update: Launch at noon sharp']);
+  });
+
+  it('a caret follows text typed before it when the same change also adds a block', () => {
+    // Both in one change, as when someone's edits arrive together after they were offline.
+    const a = new Y.Doc();
+    const bDoc = new Y.Doc();
+    writeDocJSON(a, b.doc(block('launch', 'Launch at noon'), block('crew', 'Crew ready')));
+    cleanups.push(linkDocs(a, bDoc));
+    const first = setup({ doc: a });
+    const second = setup({ doc: bDoc });
+    first.editor.commands.setTextSelection(15);
+    const { schema } = second.editor;
+    const tr = second.editor.state.tr.insertText('Update: ', 1);
+    tr.insert(tr.doc.content.size, schema.node('paragraph', null, schema.text('Weather go')));
+    second.editor.view.dispatch(tr);
+    typeText(first.editor, ' sharp');
+    expect(blockTexts(first.editor)).toEqual([
+      'paragraph:Update: Launch at noon sharp',
+      'paragraph:Crew ready',
+      'paragraph:Weather go',
+    ]);
+  });
+
+  it('a caret stays in its block when someone else moves the block', () => {
+    // Moving one of two blocks rewrites both in place; among more, the moved block is recreated.
+    for (const texts of [
+      ['Launch at noon', 'Crew ready'],
+      ['Alpha', 'Bravo', 'Charlie', 'Launch at noon', 'Crew ready'],
+    ]) {
+      const a = new Y.Doc();
+      const bDoc = new Y.Doc();
+      writeDocJSON(a, b.doc(...texts.map((text, index) => block(`block-${index}`, text))));
+      cleanups.push(linkDocs(a, bDoc));
+      const first = setup({ doc: a });
+      const second = setup({ doc: bDoc });
+      // The caret in "Crew re|ady", the last block, which someone else moves up.
+      const last = texts.length - 1;
+      let pos = 0;
+      for (let index = 0; index < last; index += 1)
+        pos += first.editor.state.doc.child(index).nodeSize;
+      first.editor.commands.setTextSelection(pos + 1 + 'Crew re'.length);
+      moveBlock(second.editor, { pos, node: second.editor.state.doc.child(last) }, 'up');
+      typeText(first.editor, 'x');
+      expect(blockTexts(first.editor)).toContain('paragraph:Crew rexady');
+      expect(blockTexts(first.editor)).toContain('paragraph:Launch at noon');
+    }
   });
 });
 
