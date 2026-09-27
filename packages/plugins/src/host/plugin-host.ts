@@ -7,7 +7,7 @@ import type { UiFont } from '../sandbox/runtime-ui';
 import { t } from '../i18n';
 import type { PluginConsoleStore } from './console';
 import { watchDevPlugin, type DevStatus } from './dev';
-import { PluginInstance } from './instance';
+import { PluginInstance, type InstanceDeps } from './instance';
 
 /** Options of {@link PluginHost}. */
 export interface PluginHostOptions {
@@ -23,6 +23,10 @@ export interface PluginHostOptions {
   emojiIcon(emoji: string): IconComponent;
   /** Where the hidden logic frames go. Default: a hidden element appended to `document.body`. */
   container?: HTMLElement;
+  /** Where renderer frames go. Default: an element out of sight, appended to `document.body`. */
+  rendererContainer?: HTMLElement;
+  /** How long an unused renderer frame stays open (tests shorten it). */
+  rendererIdleMs?: number;
   /** Dev-mode polling interval (tests shorten it). */
   devIntervalMs?: number;
 }
@@ -39,7 +43,9 @@ export class PluginHost {
   private version = 0;
   private theme: ThemeInfo;
   private container: HTMLElement | null = null;
+  private rendererContainer: HTMLElement | null = null;
   private ownsContainer = false;
+  private ownsRendererContainer = false;
   private disposed = false;
   private readonly devWatchers = new Map<string, { url: string; stop: () => void }>();
   private readonly devStatuses = new Map<string, DevStatus>();
@@ -69,6 +75,20 @@ export class PluginHost {
       document.body.append(container);
       this.container = container;
       this.ownsContainer = true;
+    }
+    if (this.options.rendererContainer) this.rendererContainer = this.options.rendererContainer;
+    else {
+      // Renderer frames draw for others (a diagram library measures text), so they need layout:
+      // this box is laid out, but out of sight, out of the way and hidden from assistive tech.
+      const box = document.createElement('div');
+      box.setAttribute('data-tessera-plugin-renderers', '');
+      box.setAttribute('aria-hidden', 'true');
+      box.inert = true;
+      box.style.cssText =
+        'position:fixed;top:0;left:-10000px;width:1200px;height:900px;visibility:hidden;pointer-events:none;contain:strict';
+      document.body.append(box);
+      this.rendererContainer = box;
+      this.ownsRendererContainer = true;
     }
     const { ctx } = this;
     const { manager } = this.options;
@@ -117,18 +137,22 @@ export class PluginHost {
     let instance = this.instances.get(id);
     if (!instance) {
       const container = this.container ?? document.body;
-      instance = new PluginInstance(id, {
+      const deps: InstanceDeps = {
         ctx: this.ctx,
         manager: this.options.manager,
         console: this.options.console,
         sandboxes: this.options.sandboxes,
         container,
+        rendererContainer: this.rendererContainer ?? container,
         theme: () => this.theme,
         fonts: () => this.options.theme.fonts(),
         panelComponent: this.options.panelComponent,
         emojiIcon: this.options.emojiIcon,
         onChange: () => this.changed(),
-      });
+      };
+      if (this.options.rendererIdleMs !== undefined)
+        deps.rendererIdleMs = this.options.rendererIdleMs;
+      instance = new PluginInstance(id, deps);
       this.instances.set(id, instance);
       this.changed();
     }
@@ -253,7 +277,9 @@ export class PluginHost {
     await Promise.all([...this.instances.values()].map((instance) => instance.stop()));
     this.instances.clear();
     if (this.ownsContainer) this.container?.remove();
+    if (this.ownsRendererContainer) this.rendererContainer?.remove();
     this.container = null;
+    this.rendererContainer = null;
     this.listeners.clear();
   }
 }

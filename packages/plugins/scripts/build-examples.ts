@@ -1,6 +1,7 @@
 /**
  * Builds the example plugins in `examples/plugins/<name>` into installable bundles:
- * `dist/manifest.json`, `dist/main.js`, `dist/README.md` and `dist/<id>-<version>.zip`.
+ * `dist/manifest.json`, `dist/main.js`, `dist/README.md` and `dist/<id>-<version>.zip`, plus
+ * `dist/renderer.js` for an example whose manifest names a renderer (built with `--mode renderer`).
  *
  * Each example has its own `vite.config.ts` (a single-file library build), so it also builds on its
  * own once copied out of the repository. Inside the monorepo the SDK and mermaid resolve to the
@@ -60,6 +61,7 @@ export async function buildExample(
     id: string;
     version: string;
     entry: string;
+    renderer?: string;
   };
   const dist = join(dir, 'dist');
   const zip = join(dist, `${manifest.id}-${manifest.version}.zip`);
@@ -68,14 +70,18 @@ export async function buildExample(
     existsSync(zip) &&
     statSync(zip).mtimeMs > Math.max(newest(dir), newest(PLUGIN_API));
   if (!fresh) {
-    await build({
-      root: dir,
-      configFile: join(dir, 'vite.config.ts'),
-      logLevel: 'warn',
-      resolve: { alias: exampleAliases },
-    });
+    const modes = manifest.renderer ? ['production', 'renderer'] : ['production'];
+    for (const mode of modes)
+      await build({
+        root: dir,
+        configFile: join(dir, 'vite.config.ts'),
+        mode,
+        logLevel: 'warn',
+        resolve: { alias: exampleAliases },
+      });
     const files: Record<string, Uint8Array> = {};
-    for (const file of ['manifest.json', manifest.entry, 'README.md']) {
+    const modules = manifest.renderer ? [manifest.entry, manifest.renderer] : [manifest.entry];
+    for (const file of ['manifest.json', ...modules, 'README.md']) {
       const path = join(dist, file);
       if (existsSync(path)) files[file] = readFileSync(path);
     }

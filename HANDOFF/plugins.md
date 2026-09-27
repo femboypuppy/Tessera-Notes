@@ -32,7 +32,8 @@ Milestones (each ends tested and committed), all done:
 **`packages/plugin-api`: the SDK** (what plugin authors import; no host code, so bundles stay
 small).
 
-- `src/index.ts`: `definePlugin`, `defineBlock`, `isPluginDefinition`.
+- `src/index.ts`: `definePlugin`, `defineBlock`, `isPluginDefinition`, `defineRenderer`,
+  `isRendererDefinition`.
 - `src/types.ts`: the whole API (`PluginApi` with `commands`, `ui`, `pages`, `databases`,
   `storage`, `settings`, `theme`), `PanelContext`, `BlockContext`, the settings schema types.
   Everything has TSDoc, and most methods have examples.
@@ -196,6 +197,20 @@ typechecked.
   Parsing Mermaid takes 2–5 s, so code is prepared in the background when a plugin with panels or
   blocks starts, once per version, and kept in IndexedDB. What it can't stop: one long call into
   the browser (a regular expression that backtracks for minutes).
+- **Renderers: heavy drawing code loads once per plugin, not once per block (issue #14).** Each
+  Mermaid block frame used to load the whole 5.2 MB bundle. A plugin can now ship a second module,
+  named by `renderer` in its manifest (plugin API 2; `PLUGIN_API_VERSION` is 2, so Tessera 0.1
+  refuses such a plugin rather than running it without its renderer). The host opens one hidden
+  frame per plugin for it on the first `api.ui.render(name, input)` call, from any surface, and
+  closes it after `rendererIdleMs` (2 min) without calls, with the plugin, or when it stops
+  answering (its guard's `unresponsive`, or the heartbeat); the next call opens a new one. It is
+  a UI frame (`createUi` with `kind: 'renderer'`, instrumented and locked like the others,
+  same CSP and network grants) in a box that is laid out but out of sight, because render functions
+  measure text; the frame gets the theme and fonts. It has **no API**: the endpoint refuses every
+  call from it, and render functions get only their JSON input. Rendering in the worker was the
+  alternative, but Mermaid needs a real DOM to measure text, and a shared frame keeps any library
+  working as it does in a block. The Mermaid example is split in two builds: `main.js` (the block,
+  9 KB) and `renderer.js` (Mermaid); the block sends `{ code, theme, width }` and inserts the SVG.
 - **Sandbox code ships as source text** (`Function.prototype.toString()`), so the runtime needs no
   separate build step and no URL. Every shipped function is tested for self-containment in a fresh
   `vm` realm. The module loader stays a string (`LOAD_MODULE_SOURCE`), because Vite dev rewrites
@@ -256,8 +271,8 @@ typechecked.
     - Dev only: `fake-indexeddb` 6.2.5 (store tests), `fast-check` 4.10.2 (RPC fuzzing),
       `mermaid` 12.0.0 (building and testing the Mermaid example), `vite` 8.3.0 (example builds).
   - `packages/plugin-api` dev: `typescript` 6.0.3, for the docs generator (the root version).
-  - `mermaid` is a dependency of the Mermaid example only. It's bundled into that plugin
-    (5.2 MB), never into the app.
+  - `mermaid` is a dependency of the Mermaid example only. It's bundled into that plugin's
+    renderer (5.2 MB), never into the app, and not into its `main.js` (9 KB).
 
 ## Contract change requests (exact proposed diff to packages/core, and why)
 
@@ -290,8 +305,7 @@ None. Everything the plugin system needs was already in `packages/core`.
   check works the same way.
 - **README rendering needs Agent 08's codec.** Core's stub codec only knows paragraphs and
   headings, so until the merge READMEs show markdown syntax (`**`, tables) as text.
-- **The Mermaid plugin bundle is 5.2 MB**, loaded once per block frame (from a blob, so no network).
-  This is fine for a handful of diagrams; a page with dozens would use a lot of memory.
+
 - **Plugin storage is per device and shared across workspaces.** A plugin that stores page IDs
   should expect IDs from another workspace. `api` has no workspace ID yet (a possible API
   addition, compatible through `apiVersion`).

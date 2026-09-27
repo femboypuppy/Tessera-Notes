@@ -3,6 +3,7 @@ import { createTestAppContext, type TestAppContext } from '@tessera/core/testing
 import {
   defineBlock,
   definePlugin,
+  defineRenderer,
   type BlockContext,
   type PanelContext,
   type PluginApi,
@@ -16,7 +17,7 @@ import { MemoryPluginStore } from '../store/memory-store';
 import { bundle } from '../test/fixtures';
 import { createInProcessSandboxes } from '../test/in-process-sandbox';
 import { PluginConsoleStore } from './console';
-import { PluginHost } from './plugin-host';
+import { PluginHost, type PluginHostOptions } from './plugin-host';
 
 const theme: ThemeInfo = {
   mode: 'light',
@@ -34,14 +35,19 @@ interface Setup {
   install(
     definition: PluginDefinition | unknown,
     patch?: Partial<PluginManifest>,
-    options?: { granted?: PluginManifest['permissions']; version?: string },
+    options?: {
+      granted?: PluginManifest['permissions'];
+      version?: string;
+      /** A renderer module (`defineRenderer`): the manifest names it, with API 2. */
+      renderer?: unknown;
+    },
   ): Promise<void>;
   running(id?: string): Promise<void>;
 }
 
 let current: Setup | null = null;
 
-async function setup(): Promise<Setup> {
+async function setup(hostOptions: Partial<PluginHostOptions> = {}): Promise<Setup> {
   const app = await createTestAppContext();
   const manager = new PluginManager(new MemoryPluginStore());
   await manager.ready;
@@ -56,6 +62,7 @@ async function setup(): Promise<Setup> {
     panelComponent: () => () => null,
     emojiIcon: () => () => null,
     container: document.createElement('div'),
+    ...hostOptions,
   });
   await host.start();
   let counter = 0;
@@ -70,7 +77,13 @@ async function setup(): Promise<Setup> {
       counter += 1;
       const code = `module-${counter}`;
       modules.set(code, definition);
-      const next = bundle(patch, code);
+      const next = options.renderer
+        ? {
+            ...bundle({ apiVersion: 2, renderer: 'renderer.js', ...patch }, code),
+            renderer: `renderer-${counter}`,
+          }
+        : bundle(patch, code);
+      if (options.renderer) modules.set(`renderer-${counter}`, options.renderer);
       await manager.install(next, {
         granted: options.granted ?? next.manifest.permissions,
         source: { kind: 'file', name: 'test.zip' },
@@ -806,5 +819,171 @@ describe('plugin API through the sandbox runtime', () => {
     expect(
       s.app.shell.toasts.filter((toast) => toast.description === 'From Word count'),
     ).toHaveLength(5);
+  });
+});
+
+describe('renderers', () => {
+  const renderer = defineRenderer({
+    shout: (input: { text: string }) => ({ text: input.text.toUpperCase() }),
+    fail: () => {
+      throw new Error('Nothing to draw');
+    },
+    wait: () => new Promise<never>(() => undefined),
+  });
+
+  /** A plugin whose blocks draw through its renderer; `api()` is its worker's API. */
+  function shouting() {
+    let workerApi: PluginApi | null = null;
+    const definition = definePlugin({
+      activate(api) {
+        workerApi = api;
+        api.ui.addBlock({ type: 'shout', title: 'Shout' });
+      },
+      blocks: {
+        shout: defineBlock<{ text: string }>(async (ctx) => {
+          const result = await ctx.api.ui.render<{ text: string }>('shout', {
+            text: ctx.data?.text ?? '',
+          });
+          ctx.root.textContent = result.text;
+        }),
+      },
+    });
+    const api = () => {
+      if (!workerApi) throw new Error('not activated');
+      return workerApi as PluginApi;
+    };
+    return { definition, api };
+  }
+
+  const mountBlock = (s: Setup, text: string) => {
+    const onReady = vi.fn();
+    s.host.instance('word-count')?.mountSurface({
+      container: document.createElement('div'),
+      title: 'Shout',
+      surface: {
+        kind: 'block',
+        type: 'shout',
+        pageId: 'p',
+        blockId: text,
+        data: { text },
+        readOnly: false,
+        selected: false,
+      },
+      callbacks: { onReady, onError: vi.fn() },
+    });
+    return onReady;
+  };
+
+  const renderers = (s: Setup) => s.sandboxes.sandboxes.filter((box) => box.kind === 'renderer');
+
+  it('draws for every block and the worker in one shared frame, opened on the first call', async () => {
+    const s = await setup();
+    const plugin = shouting();
+    await s.install(plugin.definition, { permissions: ['ui:blocks'] }, { renderer });
+    await s.running();
+    await vi.waitFor(() => expect(s.host.instance('word-count')?.hasBlock('shout')).toBe(true));
+    // Nothing opens until something asks for a drawing.
+    expect(renderers(s)).toEqual([]);
+    const first = mountBlock(s, 'one');
+    const second = mountBlock(s, 'two');
+    await vi.waitFor(() => {
+      expect(first).toHaveBeenCalled();
+      expect(second).toHaveBeenCalled();
+    });
+    const blocks = s.sandboxes.sandboxes.filter((box) => box.kind === 'ui');
+    expect(blocks.map((box) => box.document?.getElementById('root')?.textContent).sort()).toEqual([
+      'ONE',
+      'TWO',
+    ]);
+    await expect(plugin.api().ui.render('shout', { text: 'worker' })).resolves.toEqual({
+      text: 'WORKER',
+    });
+    // One renderer for all of them, running the renderer module; blocks run only the main one.
+    expect(renderers(s)).toHaveLength(1);
+    expect(renderers(s)[0]?.code).toBe('renderer-1');
+    expect(blocks.every((box) => box.code === 'module-1')).toBe(true);
+  });
+
+  it('refuses without a renderer, and gives the renderer no API', async () => {
+    const s = await setup();
+    const plain = shouting();
+    await s.install(plain.definition, { permissions: ['ui:blocks'] });
+    await s.running();
+    await expect(plain.api().ui.render('shout', { text: 'x' })).rejects.toMatchObject({
+      code: 'not_found',
+      message: 'Word count has no renderer: its manifest names none.',
+    });
+
+    const plugin = shouting();
+    await s.install(
+      plugin.definition,
+      { version: '1.1.0', permissions: ['ui:blocks'] },
+      { renderer },
+    );
+    // The update restarts the plugin: wait for the new version's activate.
+    await vi.waitFor(() => plugin.api());
+    await s.running();
+    await plugin.api().ui.render('shout', { text: 'x' });
+    const frame = renderers(s)[0];
+    frame?.send({ v: 1, type: 'request', id: 77, method: 'pages.list' });
+    await vi.waitFor(() =>
+      expect(frame?.received).toContainEqual(
+        expect.objectContaining({
+          id: 77,
+          ok: false,
+          error: {
+            code: 'invalid_operation',
+            message: 'A renderer has no API: pass what it needs in its input.',
+          },
+        }),
+      ),
+    );
+  });
+
+  it('passes errors on, closes a renderer that stops responding, and opens a new one', async () => {
+    const s = await setup();
+    const plugin = shouting();
+    await s.install(plugin.definition, { permissions: ['ui:blocks'] }, { renderer });
+    await s.running();
+    const api = plugin.api();
+    await expect(api.ui.render('fail')).rejects.toThrow('Nothing to draw');
+    await expect(api.ui.render('nope')).rejects.toThrow('The renderer has no function "nope".');
+    const pending = api.ui.render('wait');
+    const frame = renderers(s)[0];
+    await vi.waitFor(() =>
+      expect(
+        frame?.received.some(
+          (message) =>
+            (message as { method?: string }).method === 'render' &&
+            (message as { params?: { name?: string } }).params?.name === 'wait',
+        ),
+      ).toBe(true),
+    );
+    // What its guard sends when it stops code that ran too long (sandbox/instrument.ts).
+    frame?.send({ v: 1, type: 'notify', method: 'unresponsive', params: { ms: 2_300 } });
+    await expect(pending).rejects.toThrow(
+      'Word count’s renderer stopped responding and was closed.',
+    );
+    expect(frame?.destroyed).toBe(true);
+    expect(s.consoles.entries('word-count').map((entry) => entry.message)).toContain(
+      'The renderer ran without a break for 2.3 s and was closed.',
+    );
+    await expect(api.ui.render('shout', { text: 'again' })).resolves.toEqual({ text: 'AGAIN' });
+    expect(renderers(s)).toHaveLength(2);
+    expect(s.host.instance('word-count')?.status).toBe('running');
+  });
+
+  it('closes a renderer nobody used for a while, and with the plugin', async () => {
+    const s = await setup({ rendererIdleMs: 50 });
+    const plugin = shouting();
+    await s.install(plugin.definition, { permissions: ['ui:blocks'] }, { renderer });
+    await s.running();
+    await plugin.api().ui.render('shout', { text: 'a' });
+    await vi.waitFor(() => expect(renderers(s)[0]?.destroyed).toBe(true));
+    await plugin.api().ui.render('shout', { text: 'b' });
+    expect(renderers(s)).toHaveLength(2);
+    expect(renderers(s)[1]?.destroyed).toBe(false);
+    await s.manager.setEnabled('word-count', false);
+    await vi.waitFor(() => expect(renderers(s)[1]?.destroyed).toBe(true));
   });
 });

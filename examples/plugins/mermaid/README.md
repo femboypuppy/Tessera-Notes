@@ -22,14 +22,19 @@ and works offline. The plugin can’t read other pages or reach the internet; Me
   starting diagram (`initialData`).
 - `blocks.diagram` renders each block in its own sandboxed frame (`src/block.ts`). It saves edits
   with `ctx.setData({ code })` and follows undo and collaborators with `ctx.onChange`.
-- `src/render.ts` turns Tessera’s design tokens (`api.theme`) into Mermaid theme variables.
-- The build inlines Mermaid into one file (`codeSplitting: false` in `vite.config.ts`), because a
-  plugin loads from a single module.
+- Mermaid isn't in the block's code. The block asks the plugin's **renderer** to draw
+  (`ctx.api.ui.render('diagram', { code, theme, width })`), and gets SVG back. The renderer
+  (`src/renderer.ts`, `"renderer": "renderer.js"` in the manifest) runs in one hidden frame that
+  draws for every block, so a page of diagrams loads Mermaid once, not once per block.
+- `src/render.ts` turns Tessera’s design tokens (`api.theme`) into Mermaid theme variables, and
+  draws one diagram at a time.
+- The build makes two single-file modules (`codeSplitting: false` in `vite.config.ts`):
+  `main.js` (about 9 KB) and `renderer.js` (with Mermaid, about 5 MB).
 
 ## Develop
 
 ```sh
 pnpm install
 pnpm test    # the renderer is mocked: jsdom can't lay out SVG
-pnpm build
+pnpm build   # dist/main.js, then dist/renderer.js
 ```

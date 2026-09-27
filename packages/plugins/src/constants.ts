@@ -93,8 +93,9 @@ export const PLUGIN_TIMINGS = {
   /** A plugin that hasn't answered a ping for this long is stopped. */
   heartbeatTimeoutMs: 4_000,
   /**
-   * How long code in a panel or block frame may run without a break. Those frames share the app's
-   * main thread in some browsers, so their code is stopped after this (`sandbox/instrument.ts`).
+   * How long code in a panel, block or renderer frame may run without a break. Those frames share
+   * the app's main thread in some browsers, so their code is stopped after this
+   * (`sandbox/instrument.ts`).
    */
   frameRunLimitMs: 2_000,
   /** How long a sandbox may take to load the plugin and say it's ready. */
@@ -104,4 +105,8 @@ export const PLUGIN_TIMINGS = {
   deactivateTimeoutMs: 2_000,
   /** How long a command may run before the host stops waiting (the plugin keeps running). */
   commandTimeoutMs: 60_000,
+  /** How long `api.ui.render` waits for the renderer (the frame's own limit stops a hang first). */
+  renderTimeoutMs: 60_000,
+  /** A renderer frame nobody called for this long is closed (it starts again when needed). */
+  rendererIdleMs: 120_000,
 } as const;

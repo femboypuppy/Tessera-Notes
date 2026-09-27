@@ -1,8 +1,9 @@
 /**
  * Version of the plugin API described by this SDK. Put it in your manifest as `apiVersion`. The
- * host refuses plugins built for a newer API and keeps older versions working.
+ * host refuses plugins built for a newer API and keeps older versions working. Version 2 added
+ * renderers ({@link defineRenderer}, `api.ui.render`); Tessera 0.1 runs version 1.
  */
-export const PLUGIN_API_VERSION = 1;
+export const PLUGIN_API_VERSION = 2;
 
 /**
  * Permissions a plugin can ask for in its manifest. `network:<domain>` (for example

@@ -5,13 +5,16 @@ import { t } from './i18n';
 import { parsePluginManifest } from './manifest';
 
 /**
- * A plugin as installed: its validated manifest, the JavaScript entry and the optional README.
- * Other files in a bundle are ignored (the sandbox only ever loads the entry).
+ * A plugin as installed: its validated manifest, the JavaScript entry, the renderer module when
+ * the manifest names one, and the optional README. Other files in a bundle are ignored (the
+ * sandbox only ever loads those two modules).
  */
 export interface PluginBundle {
   manifest: PluginManifest;
   /** The entry module's source (an ES module whose default export is `definePlugin(…)`). */
   code: string;
+  /** The renderer module's source (default export `defineRenderer(…)`), if any. */
+  renderer?: string;
   readme?: string;
 }
 
@@ -95,11 +98,15 @@ export function bundleFromFiles(files: readonly BundleFile[]): PluginBundle {
   if (manifestBytes.byteLength > PLUGIN_LIMITS.manifestBytes)
     throw tooLarge(manifestBytes.byteLength, PLUGIN_LIMITS.manifestBytes);
   const manifest = parseManifestText(decoder.decode(manifestBytes));
-  const entry = read(manifest.entry);
-  if (!entry) throw new PluginBundleError(t('errMissingEntry', { entry: manifest.entry }));
-  if (entry.byteLength > PLUGIN_LIMITS.entryBytes)
-    throw tooLarge(entry.byteLength, PLUGIN_LIMITS.entryBytes);
-  const bundle: PluginBundle = { manifest, code: decoder.decode(entry) };
+  const module = (path: string) => {
+    const bytes = read(path);
+    if (!bytes) throw new PluginBundleError(t('errMissingEntry', { entry: path }));
+    if (bytes.byteLength > PLUGIN_LIMITS.entryBytes)
+      throw tooLarge(bytes.byteLength, PLUGIN_LIMITS.entryBytes);
+    return decoder.decode(bytes);
+  };
+  const bundle: PluginBundle = { manifest, code: module(manifest.entry) };
+  if (manifest.renderer) bundle.renderer = module(manifest.renderer);
   const readme = read('README.md') ?? read('readme.md');
   if (readme && readme.byteLength <= PLUGIN_LIMITS.readmeBytes)
     bundle.readme = decoder.decode(readme);
@@ -239,9 +246,12 @@ export async function bundleFromUrl(
       throw new PluginBundleError(t('errNotPlugin'));
     throw error;
   }
-  const entryUrl = new URL(manifest.entry, url);
-  const code = await download(entryUrl.href, PLUGIN_LIMITS.entryBytes, fetchImpl, options.signal);
-  const bundle: PluginBundle = { manifest, code: decoder.decode(code) };
+  const module = async (path: string) =>
+    decoder.decode(
+      await download(new URL(path, url).href, PLUGIN_LIMITS.entryBytes, fetchImpl, options.signal),
+    );
+  const bundle: PluginBundle = { manifest, code: await module(manifest.entry) };
+  if (manifest.renderer) bundle.renderer = await module(manifest.renderer);
   try {
     const readme = await download(
       new URL('README.md', url).href,
@@ -258,8 +268,13 @@ export async function bundleFromUrl(
 }
 
 /** A SHA-256 of the manifest and code, to notice changes (dev mode) and report integrity. */
-export async function hashBundle(bundle: Pick<PluginBundle, 'manifest' | 'code'>): Promise<string> {
-  const data = new TextEncoder().encode(`${JSON.stringify(bundle.manifest)}\n${bundle.code}`);
+export async function hashBundle(
+  bundle: Pick<PluginBundle, 'manifest' | 'code' | 'renderer'>,
+): Promise<string> {
+  const renderer = bundle.renderer === undefined ? '' : `\n${bundle.renderer}`;
+  const data = new TextEncoder().encode(
+    `${JSON.stringify(bundle.manifest)}\n${bundle.code}${renderer}`,
+  );
   return sha256Hex(data);
 }
 

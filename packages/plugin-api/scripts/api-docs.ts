@@ -64,6 +64,19 @@ const SECTIONS: Section[] = [
     receivers: { UiApi: 'api.ui' },
   },
   {
+    title: 'Renderers',
+    intro:
+      'Plugin API 2. Heavy drawing code (a diagram or chart library) goes in a second module, named by `renderer` in the manifest. It loads once, in a hidden frame shared by the plugin’s panels and blocks, which call it with `api.ui.render`.',
+    names: [
+      'defineRenderer',
+      'RenderFunction',
+      'RenderFunctions',
+      'DefinedRenderer',
+      'isRendererDefinition',
+      'RENDERER_DEFINITION_MARKER',
+    ],
+  },
+  {
     title: 'Pages',
     names: [
       'PagesApi',

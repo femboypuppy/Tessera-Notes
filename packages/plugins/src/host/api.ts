@@ -20,20 +20,14 @@ import {
   type PagesSnapshot,
   type PropertyDefinition,
 } from '@tessera/core';
-import type {
-  DatabaseProperty,
-  DatabaseRow,
-  DatabaseSchema,
-  PageInfo,
-  PluginSurface,
-} from '@tessera/plugin-api';
+import type { DatabaseProperty, DatabaseRow, DatabaseSchema, PageInfo } from '@tessera/plugin-api';
 import { resolveRowInput, runRowQuery } from '@tessera/plugin-api/query';
 import type * as Y from 'yjs';
 import { PluginCallError } from '../errors';
 import { t } from '../i18n';
 import type { PluginManager } from '../manager';
 import type { ApiHandlers } from '../rpc/endpoint';
-import type { ApiParams } from '../rpc/protocol';
+import type { ApiParams, ConnectionSurface } from '../rpc/protocol';
 import type { InstalledPlugin } from '../store/types';
 
 /** Registrations a plugin makes from its worker (implemented by the plugin instance). */
@@ -49,7 +43,7 @@ export interface RegistrationApi {
 
 /** One connection's subscriptions (the host forwards events only to subscribers). */
 export interface ConnectionApi {
-  surface: PluginSurface;
+  surface: ConnectionSurface;
   subscribe(topic: 'pages' | 'storage', on: boolean): void;
 }
 
@@ -71,6 +65,8 @@ export interface ApiContext {
   surface: SurfaceApi;
   /** Rate limiting of notifications, shared by all of a plugin's connections. */
   allowNotification(): boolean;
+  /** Runs one of the plugin's render functions in its renderer frame. */
+  render(name: string, input: JsonValue): Promise<unknown>;
 }
 
 /** A page's metadata as plugins see it. */
@@ -213,6 +209,7 @@ export function createApiHandlers(api: ApiContext): ApiHandlers {
         variant: params.variant ?? 'default',
       });
     },
+    'ui.render': ({ name, input }) => api.render(name, input ?? null),
 
     'pages.list': (params) => {
       const current = snapshot();
