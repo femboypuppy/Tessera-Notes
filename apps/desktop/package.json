@@ -35,6 +35,7 @@
   },
   "devDependencies": {
     "@tauri-apps/cli": "2.11.5",
+    "@tessera/importers": "workspace:*",
     "react": "19.3.0",
     "react-dom": "19.3.0"
   }

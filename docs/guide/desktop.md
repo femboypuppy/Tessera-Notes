@@ -33,8 +33,10 @@ instead. That's what the server is for.
 
 Turn on **Keep a markdown copy of every page** in **Settings → Desktop**, and Tessera keeps a
 `markdown/` folder next to your data, updated as you write. It's the same format as a markdown
-export: plain, Obsidian-compatible files. Use it for grep, for backups, or for peace of mind. Edits
-made directly to those files are not read back.
+export: plain, Obsidian-compatible files. Use it for grep, for backups, or for peace of mind. Only
+the files of pages that changed are written again, so even a large workspace stays cheap to keep in
+step. Edits made directly to those files are not read back: a file is replaced when its page
+changes, and every file when the app starts.
 
 ## Quick capture
 

@@ -315,8 +315,12 @@ export class TauriBackend implements DesktopBackend {
     return result === true;
   }
 
-  mirrorFinish(workspaceId: string) {
-    return call('mirror_finish', { workspaceId }, mirrorReportSchema);
+  mirrorFinish(workspaceId: string, keep?: readonly string[]) {
+    return call(
+      'mirror_finish',
+      { workspaceId, keep: keep ? [...keep] : null },
+      mirrorReportSchema,
+    );
   }
 
   getSecret(server: string) {

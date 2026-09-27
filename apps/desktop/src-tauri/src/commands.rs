@@ -677,9 +677,20 @@ pub async fn mirror_write(app: AppHandle, request: Request<'_>) -> Result<bool> 
     .await
 }
 
+/// `keep`: files an incremental run left as they were (see `Workspace::mirror_finish`).
 #[tauri::command]
-pub async fn mirror_finish(app: AppHandle, workspace_id: String) -> Result<MirrorReport> {
-    blocking(move || state(&app).workspaces.get(&workspace_id)?.mirror_finish()).await
+pub async fn mirror_finish(
+    app: AppHandle,
+    workspace_id: String,
+    keep: Option<Vec<String>>,
+) -> Result<MirrorReport> {
+    blocking(move || {
+        state(&app)
+            .workspaces
+            .get(&workspace_id)?
+            .mirror_finish(keep.as_deref().unwrap_or_default())
+    })
+    .await
 }
 
 // ---------------------------------------------------------------------------------------------
