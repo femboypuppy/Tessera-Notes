@@ -1,5 +1,11 @@
 import { COMMANDS, formatShortcut, SETTING_KEYS } from '@tessera/core';
-import { useAppContext, useCommands, useContributions, usePages } from '@tessera/core/react';
+import {
+  sameItems,
+  useAppContext,
+  useCommands,
+  useContributions,
+  usePagesSelector,
+} from '@tessera/core/react';
 import {
   cn,
   FeatureBoundary,
@@ -23,9 +29,8 @@ import { WorkspaceSwitcher } from './WorkspaceSwitcher';
 
 function Favorites() {
   const ctx = useAppContext();
-  const snapshot = usePages();
   const currentPageId = useUiStore((state) => state.currentPageId);
-  const favorites = snapshot.favorites();
+  const favorites = usePagesSelector((pages) => pages.favorites(), sameItems);
   if (favorites.length === 0) return null;
   return (
     <SidebarSection title={t('favorites')} collapsible>

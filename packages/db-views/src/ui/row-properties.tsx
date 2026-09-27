@@ -1,5 +1,5 @@
 import type { PropertyDefinition, PropertyType, ResolvedRow } from '@tessera/core';
-import { useAppContext, usePages } from '@tessera/core/react';
+import { useAppContext, usePage, usePagesSelector } from '@tessera/core/react';
 import {
   Callout,
   DropdownMenu,
@@ -228,11 +228,10 @@ function PropertyRow({
 /** The properties of a database row, under its title (row pages and the side peek). */
 export function RowPropertiesPanel({ pageId, readOnly }: { pageId: string; readOnly: boolean }) {
   const ctx = useAppContext();
-  const pages = usePages();
-  const databaseId = pages.effectiveParentId(pageId);
-  const database = databaseId ? pages.get(databaseId) : undefined;
+  const databaseId = usePagesSelector((pages) => pages.effectiveParentId(pageId));
+  const database = usePage(databaseId);
   const { ref, snapshot, loading } = useDatabase(database?.kind === 'database' ? databaseId : null);
-  const queryCtx = useQueryContext();
+  const queryCtx = useQueryContext(1, snapshot);
   const [renaming, setRenaming] = useState<string | null>(null);
   const afterAdd = useAfterMenuClose();
   if (!databaseId || database?.kind !== 'database') return null;

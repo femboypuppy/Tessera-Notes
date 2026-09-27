@@ -1,4 +1,4 @@
-import { useAppContext, useContributions, usePage, usePages } from '@tessera/core/react';
+import { useAppContext, useContributions, usePage, usePagesSelector } from '@tessera/core/react';
 import {
   EmptyState,
   FeatureBoundary,
@@ -62,10 +62,10 @@ function PeekTitle({
 export function SidePeek({ rowId, onClose }: { rowId: string; onClose: () => void }) {
   const ctx = useAppContext();
   const page = usePage(rowId);
-  const pages = usePages();
+  const trashed = usePagesSelector((pages) => pages.isTrashed(rowId));
   const bodies = useContributions('pageBodies');
   const body = bodies.find((candidate) => candidate.kind === 'page');
-  const readOnly = page ? pages.isTrashed(rowId) : true;
+  const readOnly = page ? trashed : true;
   useEffect(() => {
     if (!page) onClose();
   }, [page, onClose]);

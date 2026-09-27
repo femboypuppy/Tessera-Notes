@@ -166,7 +166,7 @@ function LoadedDatabaseView({
   const [panel, setPanel] = useState<ToolbarPanel>(null);
   const [focusFilterId, setFocusFilterId] = useState<string | null>(null);
   const [renamingTitle, setRenamingTitle] = useState(false);
-  const queryCtx = useQueryContext(view?.calendar.weekStartsOn ?? 1);
+  const queryCtx = useQueryContext(view?.calendar.weekStartsOn ?? 1, snapshot);
   const emptyView = useMemo(() => ({ filter: null, sorts: [], group: null }), []);
   const result = useViewQuery(snapshot, view ?? emptyView, search, queryCtx, {
     group: view ? view.type === 'table' || view.type === 'board' || view.type === 'list' : false,

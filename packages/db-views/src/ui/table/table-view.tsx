@@ -10,7 +10,7 @@ import {
   type ResolvedRow,
   type ViewConfig,
 } from '@tessera/core';
-import { useAppContext, usePages } from '@tessera/core/react';
+import { useAppContext } from '@tessera/core/react';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -143,7 +143,6 @@ export function TableView({
   onCreateRow,
 }: TableViewProps) {
   const ctx = useAppContext();
-  const pages = usePages();
   const gridId = `db-grid-${useId().replace(/[^a-zA-Z0-9]/g, '')}`;
   const scrollRef = useRef<HTMLDivElement>(null);
   const [liveWidth, setLiveWidth] = useState<{ id: string; width: number } | null>(null);
@@ -1012,7 +1011,6 @@ export function TableView({
               queryCtx={queryCtx}
               events={events}
               groupProperty={groupProperty}
-              pages={pages}
               onToggleGroup={toggleGroup}
               onHideGroup={readOnly ? undefined : hideGroup}
               onAddInGroup={addInGroup}

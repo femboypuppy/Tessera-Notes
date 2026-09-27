@@ -1,5 +1,4 @@
 import { EMPTY_GROUP_KEY, type PropertyDefinition, type ResolvedRow } from '@tessera/core';
-import type { PagesSnapshot } from '@tessera/core';
 import { IconButton, cn } from '@tessera/ui';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { ChevronRight, EyeOff, Plus } from 'lucide-react';
@@ -70,7 +69,6 @@ export interface TableBodyProps {
   queryCtx: QueryContext;
   events: CellEvents;
   groupProperty: PropertyDefinition | undefined;
-  pages: PagesSnapshot;
   onToggleGroup: (group: RowGroup<ResolvedRow>) => void;
   onHideGroup: ((group: RowGroup<ResolvedRow>) => void) | undefined;
   onAddInGroup: (group: RowGroup<ResolvedRow>) => void;
@@ -99,7 +97,6 @@ export function TableBody({
   queryCtx,
   events,
   groupProperty,
-  pages,
   onToggleGroup,
   onHideGroup,
   onAddInGroup,
@@ -158,7 +155,6 @@ export function TableBody({
               group={item.group}
               property={groupProperty}
               queryCtx={queryCtx}
-              pages={pages}
               top={top}
               width={totalWidth}
               ariaRowIndex={virtualItem.index + 2}
@@ -238,7 +234,6 @@ const GroupHeader = memo(function GroupHeader({
   group,
   property,
   queryCtx,
-  pages,
   top,
   width,
   ariaRowIndex,
@@ -249,7 +244,6 @@ const GroupHeader = memo(function GroupHeader({
   group: RowGroup<ResolvedRow>;
   property: PropertyDefinition;
   queryCtx: QueryContext;
-  pages: PagesSnapshot;
   top: number;
   width: number;
   ariaRowIndex: number;
@@ -258,7 +252,7 @@ const GroupHeader = memo(function GroupHeader({
   onHide: ((group: RowGroup<ResolvedRow>) => void) | undefined;
 }) {
   const collapsed = group.collapsed;
-  const name = groupName(group, property, queryCtx, pages);
+  const name = groupName(group, property, queryCtx);
   return (
     <div
       role="row"
@@ -283,7 +277,7 @@ const GroupHeader = memo(function GroupHeader({
             className={cn('duration-fast size-4 transition-transform', !collapsed && 'rotate-90')}
           />
         </button>
-        <GroupLabel group={group} property={property} queryCtx={queryCtx} pages={pages} />
+        <GroupLabel group={group} property={property} queryCtx={queryCtx} />
         <span className="text-xs text-fg-muted tabular-nums">{group.rows.length}</span>
         {onHide && group.key !== EMPTY_GROUP_KEY ? (
           <IconButton
