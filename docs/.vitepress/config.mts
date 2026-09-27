@@ -201,7 +201,8 @@ export default withMermaid({
     ['meta', { name: 'twitter:card', content: 'summary_large_image' }],
   ],
   themeConfig: {
-    logo: { src: '/logo-mark.svg', alt: '' },
+    // The site's own theme toggle picks the version (the adaptive logo-mark.svg follows the OS).
+    logo: { light: '/logo-mark-light.svg', dark: '/logo-mark-dark.svg', alt: '' },
     siteTitle: 'Tessera',
     nav: [
       { text: 'Guide', link: '/guide/', activeMatch: '^/guide/' },

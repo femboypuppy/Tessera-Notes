@@ -7,7 +7,7 @@ import {
   type Backlink,
   type UnlinkedMention,
 } from '@tessera/core';
-import { useAppContext, usePages } from '@tessera/core/react';
+import { useAppContext, usePagesSelector } from '@tessera/core/react';
 import { Fragment, useCallback, useEffect, useState } from 'react';
 import * as Y from 'yjs';
 import { escapeRegExp } from '../engine/text';
@@ -99,6 +99,11 @@ export function groupBySource<T extends { sourcePageId: string }>(
   return [...groups].map(([sourcePageId, list]) => ({ sourcePageId, items: list }));
 }
 
+/** A page's current title (links without a label show it, and follow renames). */
+function PageTitle({ id }: { id: string }) {
+  return <>{displayTitle(usePagesSelector((pages) => pages.get(id)?.title))}</>;
+}
+
 /**
  * A block's inline content with live titles for links; the link to `targetId` is highlighted.
  * Falls back to plain text when the index did not provide segments.
@@ -112,7 +117,6 @@ export function Context({
   text: string;
   targetId: string;
 }) {
-  const snapshot = usePages();
   if (!segments?.length) return <>{text}</>;
   return (
     <>
@@ -129,7 +133,7 @@ export function Context({
               </span>
             );
           case 'link': {
-            const title = segment.label ?? displayTitle(snapshot.get(segment.id)?.title);
+            const title = segment.label ?? <PageTitle id={segment.id} />;
             return segment.id === targetId ? (
               <mark
                 key={index}

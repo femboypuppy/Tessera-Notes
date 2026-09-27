@@ -5,7 +5,7 @@
     <picture>
       <source media="(prefers-color-scheme: dark)" srcset="assets/brand/wordmark-dark.svg">
       <source media="(prefers-color-scheme: light)" srcset="assets/brand/wordmark-light.svg">
-      <img src="assets/brand/wordmark-light.svg" alt="Tessera" width="311" height="64">
+      <img src="assets/brand/wordmark-light.svg" alt="Tessera Notes" width="488" height="64">
     </picture>
   </a>
 </p>

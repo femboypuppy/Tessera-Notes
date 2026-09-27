@@ -1,5 +1,5 @@
 import type { HighlightRange, PageMeta } from '@tessera/core';
-import { usePages } from '@tessera/core/react';
+import { usePagesSelector } from '@tessera/core/react';
 import { cn, getLocale } from '@tessera/ui';
 import { Database, FileText, Rows3 } from 'lucide-react';
 import { Fragment, type ReactNode } from 'react';
@@ -71,12 +71,14 @@ export function PageGlyph({
 
 /** "Parent / Child" path of a page's ancestors (empty for top-level pages). */
 export function usePagePath(pageId: string | null | undefined): string {
-  const snapshot = usePages();
-  if (!pageId) return '';
-  return snapshot
-    .ancestors(pageId)
-    .map((page) => displayTitle(page.title))
-    .join(' / ');
+  return usePagesSelector((pages) =>
+    pageId
+      ? pages
+          .ancestors(pageId)
+          .map((page) => displayTitle(page.title))
+          .join(' / ')
+      : '',
+  );
 }
 
 const UNITS: Array<[Intl.RelativeTimeFormatUnit, number]> = [

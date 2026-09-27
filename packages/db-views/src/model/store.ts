@@ -98,11 +98,17 @@ export class DatabaseStore {
   }
 
   private onPagesChange(): void {
-    this.publish(false, false, false);
+    // Most page changes happen elsewhere in the workspace (an import creates thousands of pages):
+    // publish only when one of the rows changed with its page.
+    const rows = this.resolveRows();
+    const previous = this.snapshot.rows;
+    if (rows.length === previous.length && rows.every((row, index) => row === previous[index]))
+      return;
+    this.publish(false, false, false, rows);
   }
 
-  private publish(schema: boolean, views: boolean, meta: boolean): void {
-    this.snapshot = this.build(this.snapshot.version + 1, schema, views, meta);
+  private publish(schema: boolean, views: boolean, meta: boolean, rows?: ResolvedRow[]): void {
+    this.snapshot = this.build(this.snapshot.version + 1, schema, views, meta, rows);
     for (const listener of [...this.listeners]) listener();
   }
 
@@ -143,7 +149,13 @@ export class DatabaseStore {
     return rows;
   }
 
-  private build(version: number, schema: boolean, views: boolean, meta: boolean): DatabaseSnapshot {
+  private build(
+    version: number,
+    schema: boolean,
+    views: boolean,
+    meta: boolean,
+    rows = this.resolveRows(),
+  ): DatabaseSnapshot {
     const previous = this.snapshot as DatabaseSnapshot | undefined;
     const properties = schema || !previous ? listProperties(this.doc) : previous.properties;
     return {
@@ -151,7 +163,7 @@ export class DatabaseStore {
       properties,
       titleProperty: properties.find((property) => property.type === 'title'),
       views: views || !previous ? listViews(this.doc) : previous.views,
-      rows: this.resolveRows(),
+      rows,
       meta: meta || !previous ? getDatabaseMeta(this.doc) : previous.meta,
       initialized: properties.some((property) => property.type === 'title'),
     };

@@ -27,7 +27,7 @@ import {
   type ResolvedRow,
   type TagColor,
 } from '@tessera/core';
-import { useAppContext, usePages } from '@tessera/core/react';
+import { useAppContext } from '@tessera/core/react';
 import {
   Button,
   DropdownMenu,
@@ -103,7 +103,6 @@ const SortableCard = memo(function SortableCard({
   groupProperty,
   onMove,
 }: SortableCardProps) {
-  const pages = usePages();
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id,
     disabled: props.readOnly,
@@ -155,7 +154,7 @@ const SortableCard = memo(function SortableCard({
                       key={group.key}
                       onSelect={() => onMove(row, groupKey, group.key)}
                     >
-                      {groupName(group, groupProperty, props.queryCtx, pages)}
+                      {groupName(group, groupProperty, props.queryCtx)}
                     </DropdownMenuItem>
                   ))}
               </DropdownMenuSubContent>
@@ -194,11 +193,10 @@ function Column({
   index: number;
   count: number;
 }) {
-  const pages = usePages();
   const { view, readOnly, queryCtx } = props;
   const { setNodeRef, isOver } = useDroppable({ id: columnId(group.key) });
   const [limit, setLimit] = useState(PAGE_SIZE);
-  const name = groupName(group, groupProperty, queryCtx, pages);
+  const name = groupName(group, groupProperty, queryCtx);
   const ids = useMemo(() => group.rows.map((row) => cardId(group.key, row.id)), [group]);
   const shown = group.rows.slice(0, limit);
   const tint =
@@ -222,7 +220,7 @@ function Column({
           <ChevronsLeftRight aria-hidden="true" className="size-4 text-fg-muted" />
           <span className="text-xs text-fg-muted tabular-nums">{group.rows.length}</span>
           <span className="[writing-mode:vertical-rl]">
-            <GroupLabel group={group} property={groupProperty} queryCtx={queryCtx} pages={pages} />
+            <GroupLabel group={group} property={groupProperty} queryCtx={queryCtx} />
           </span>
         </button>
       </section>
@@ -235,7 +233,7 @@ function Column({
       className={cn('flex shrink-0 flex-col rounded-lg', COLUMN_WIDTH[view.board.size], tint)}
     >
       <header className="flex h-10 items-center gap-1.5 px-2">
-        <GroupLabel group={group} property={groupProperty} queryCtx={queryCtx} pages={pages} />
+        <GroupLabel group={group} property={groupProperty} queryCtx={queryCtx} />
         <span className="text-xs text-fg-muted tabular-nums">{group.rows.length}</span>
         <span className="flex-1" />
         {!readOnly ? (
@@ -333,7 +331,6 @@ function Column({
  */
 export function BoardView(props: ViewBodyProps) {
   const ctx = useAppContext();
-  const pages = usePages();
   const { database, snapshot, view, result, readOnly, queryCtx } = props;
   const groupProperty = snapshot.properties.find(
     (property) => property.id === view.group?.propertyId,
@@ -355,9 +352,9 @@ export function BoardView(props: ViewBodyProps) {
       const { groupKey, rowId } = parseDragId(String(id));
       if (rowId) return displayTitle(rowsById.get(rowId)?.title);
       const group = result.groups?.find((candidate) => candidate.key === groupKey);
-      return group && groupProperty ? groupName(group, groupProperty, queryCtx, pages) : groupKey;
+      return group && groupProperty ? groupName(group, groupProperty, queryCtx) : groupKey;
     },
-    [rowsById, result.groups, groupProperty, queryCtx, pages],
+    [rowsById, result.groups, groupProperty, queryCtx],
   );
   const accessibility = useDragAccessibility(nameOf);
 
@@ -490,14 +487,9 @@ export function BoardView(props: ViewBodyProps) {
                     writeGroup({ hidden: config.hidden.filter((key) => key !== group.key) })
                   }
                   className="flex h-8 items-center gap-2 rounded-md px-2 text-left hover:bg-hover focus-visible:ring-2 focus-visible:ring-focus focus-visible:outline-none"
-                  aria-label={`${t('showGroup')}: ${groupName(group, groupProperty, queryCtx, pages)}`}
+                  aria-label={`${t('showGroup')}: ${groupName(group, groupProperty, queryCtx)}`}
                 >
-                  <GroupLabel
-                    group={group}
-                    property={groupProperty}
-                    queryCtx={queryCtx}
-                    pages={pages}
-                  />
+                  <GroupLabel group={group} property={groupProperty} queryCtx={queryCtx} />
                   <span className="ml-auto text-xs text-fg-subtle tabular-nums">
                     {group.rows.length}
                   </span>

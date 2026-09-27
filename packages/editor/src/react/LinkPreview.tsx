@@ -1,5 +1,5 @@
 import { extractTextBlocks, readDocJSON, type TextBlock } from '@tessera/core';
-import { usePages } from '@tessera/core/react';
+import { useAncestors, usePage, usePagesSelector } from '@tessera/core/react';
 import { cn, Skeleton } from '@tessera/ui';
 import { FileText, FileX, Trash2 } from 'lucide-react';
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
@@ -51,7 +51,6 @@ function usePagePreview(controller: EditorController, pageId: string | null): Pr
  */
 export function LinkPreview({ controller }: { controller: EditorController }) {
   const state = useStore(controller.linkPreview);
-  const snapshot = usePages();
   const panel = useRef<HTMLDivElement>(null);
   const id = useId();
   const anchor = state?.anchor ?? null;
@@ -61,8 +60,10 @@ export function LinkPreview({ controller }: { controller: EditorController }) {
   );
   const position = useFloatingPosition(panel, anchor ? getRect : null, { gap: 8 });
   const pageId = state?.pageId ?? null;
-  const page = pageId ? snapshot.get(pageId) : undefined;
-  const trashed = page ? snapshot.isTrashed(page.id) : false;
+  // Only the previewed page (and its ancestors): nothing re-renders while no preview is open.
+  const page = usePage(pageId);
+  const trashed = usePagesSelector((pages) => (page ? pages.isTrashed(page.id) : false));
+  const ancestors = useAncestors(page?.id);
   const preview = usePagePreview(controller, page && !trashed ? page.id : null);
 
   // The link describes itself with the card while it is shown.
@@ -73,7 +74,6 @@ export function LinkPreview({ controller }: { controller: EditorController }) {
   }, [anchor, id]);
 
   if (!state || !pageId) return null;
-  const ancestors = page ? snapshot.ancestors(page.id) : [];
   const title = page ? page.title || t('untitled') : t('missingPage');
 
   let body;

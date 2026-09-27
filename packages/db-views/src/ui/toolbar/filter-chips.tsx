@@ -1,11 +1,10 @@
 import {
   updateView,
   type FilterCondition,
-  type PagesSnapshot,
   type PropertyDefinition,
   type ViewConfig,
 } from '@tessera/core';
-import { useAppContext, usePages } from '@tessera/core/react';
+import { sameItems, useAppContext, usePagesSelector } from '@tessera/core/react';
 import { cn } from '@tessera/ui';
 import { ArrowDownWideNarrow, ArrowUpNarrowWide, Layers, X } from 'lucide-react';
 import { t } from '../../i18n';
@@ -23,7 +22,7 @@ export function describeCondition(
   condition: FilterCondition,
   property: PropertyDefinition,
   queryCtx: QueryContext,
-  pages: Pick<PagesSnapshot, 'get'>,
+  titleOf: (pageId: string) => string | undefined,
 ): string {
   const operator = t(`op_${condition.operator}`);
   if (VALUELESS_OPERATORS.includes(condition.operator)) return operator;
@@ -34,7 +33,7 @@ export function describeCondition(
   if (Array.isArray(value)) {
     text = value
       .map((id) =>
-        property.type === 'relation' ? displayTitle(pages.get(id)?.title) : optionName(id),
+        property.type === 'relation' ? displayTitle(titleOf(String(id))) : optionName(id),
       )
       .filter(Boolean)
       .join(', ');
@@ -47,7 +46,7 @@ export function describeCondition(
       property.type === 'select' || property.type === 'multiSelect'
         ? optionName(value)
         : property.type === 'relation'
-          ? displayTitle(pages.get(value)?.title)
+          ? displayTitle(titleOf(value))
           : `“${value}”`;
   } else if (value && typeof value === 'object') {
     if (value.kind === 'range') text = t(`range_${value.range}`);
@@ -83,12 +82,21 @@ export function FilterChips({
   onOpenSorts: () => void;
 }) {
   const ctx = useAppContext();
-  const pages = usePages();
   const filter = view.filter;
   const byId = new Map(properties.map((property) => [property.id, property]));
   const sorts = view.sorts.filter((rule) => byId.has(rule.propertyId));
   const chips = filter?.children ?? [];
+  // Relation filters name pages (maybe in no row): the chips follow those pages' titles only.
+  const pageIds = chips.flatMap((node) => {
+    if (node.type !== 'condition' || byId.get(node.propertyId)?.type !== 'relation') return [];
+    const { value } = node;
+    if (typeof value === 'string') return [value];
+    return Array.isArray(value) ? value.filter((id): id is string => typeof id === 'string') : [];
+  });
+  const titles = usePagesSelector((pages) => pageIds.map((id) => pages.get(id)?.title), sameItems);
   if (chips.length === 0 && sorts.length === 0) return null;
+  const titleById = new Map(pageIds.map((id, index) => [id, titles[index]]));
+  const titleOf = (id: string) => titleById.get(id);
   const chipClass =
     'inline-flex h-7 max-w-72 items-center gap-1 rounded-full border px-2.5 text-ui transition-colors';
   return (
@@ -130,7 +138,7 @@ export function FilterChips({
         const property = byId.get(node.propertyId);
         if (!property) return null;
         const active = isConditionActive(node, properties, queryCtx);
-        const sentence = describeCondition(node, property, queryCtx, pages);
+        const sentence = describeCondition(node, property, queryCtx, titleOf);
         return (
           <span
             key={node.id}

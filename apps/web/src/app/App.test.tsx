@@ -13,6 +13,7 @@ import {
 } from '@tessera/core';
 import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent, { type UserEvent } from '@testing-library/user-event';
+import { Profiler } from 'react';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { App } from './App';
 import { SIDEBAR_DEFAULT_WIDTH, useUiStore } from './ui-store';
@@ -167,6 +168,66 @@ describe('the app shell', () => {
     // Plain arrows move focus without moving pages.
     await user.keyboard('{ArrowDown}');
     expect(within(sidebar).getByRole('treeitem', { name: 'Alpha' })).toHaveFocus();
+  });
+
+  it('stays still while pages it does not show change', async () => {
+    const user = userEvent.setup();
+    let ctx: AppContext | null = null;
+    await useFeatures([
+      defineFeature({
+        id: 'probe',
+        activate: (context) => {
+          ctx = context;
+        },
+      }),
+    ]);
+    let commits = 0;
+    render(
+      <Profiler id="shell" onRender={() => (commits += 1)}>
+        <App runtime={runtime} />
+      </Profiler>,
+    );
+    await user.click(await screen.findByRole('button', { name: 'Create an empty workspace' }));
+    const sidebar = await screen.findByRole('navigation', { name: 'Sidebar' });
+    const app = (): AppContext => {
+      if (!ctx) throw new Error('no workspace');
+      return ctx;
+    };
+    const workspace = () => app().workspace;
+    const ids = { folder: '', notes: '', inside: '' };
+    act(() => {
+      ids.folder = workspace().createPage({ title: 'Folder' }).id;
+      ids.notes = workspace().createPage({ title: 'Notes' }).id;
+      ids.inside = workspace().createPage({ title: 'Inside', parentId: ids.folder }).id;
+      workspace().setFavorite(ids.notes, true);
+      app().navigate(ids.notes);
+    });
+    await screen.findByRole('textbox', { name: 'Page title' });
+    await within(sidebar).findByRole('button', { name: 'Notes' });
+    expect(treeTitles(sidebar)).toEqual([
+      ['Folder', '1'],
+      ['Notes', '1'],
+    ]);
+    // Let loading finish.
+    await act(() => new Promise((resolve) => setTimeout(resolve, 100)));
+
+    // An import adds pages inside a collapsed folder: nothing on screen changes.
+    commits = 0;
+    act(() => {
+      for (let index = 0; index < 25; index += 1)
+        workspace().createPage({ title: `Imported ${index}`, parentId: ids.folder });
+      workspace().renamePage(ids.inside, 'Still inside');
+    });
+    expect(commits).toBe(0);
+
+    // What it shows still follows along.
+    act(() => workspace().renamePage(ids.notes, 'Notebook'));
+    await within(sidebar).findByRole('treeitem', { name: 'Notebook' });
+    expect(within(sidebar).getByRole('button', { name: 'Notebook' })).toBeInTheDocument();
+    expect(
+      within(screen.getByRole('navigation', { name: 'Breadcrumbs' })).getByText('Notebook'),
+    ).toBeInTheDocument();
+    expect(commits).toBeGreaterThan(0);
   });
 
   it('shows each shortcut group once in the shortcuts dialog', async () => {

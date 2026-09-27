@@ -1,5 +1,5 @@
 import type { PageSectionProps } from '@tessera/core';
-import { useAppContext, usePages } from '@tessera/core/react';
+import { useAppContext, usePagesSelector } from '@tessera/core/react';
 import { cn } from '@tessera/ui';
 import { ChevronRight, Link2 } from 'lucide-react';
 import { useId, useState } from 'react';
@@ -15,11 +15,20 @@ const NO_BACKLINKS: Awaited<ReturnType<typeof loadBacklinks>> = [];
  */
 export default function BacklinksFooter({ pageId }: PageSectionProps) {
   const ctx = useAppContext();
-  const snapshot = usePages();
   const backlinks = useLinkData(pageId, loadBacklinks, NO_BACKLINKS);
   const [open, setOpen] = useState(true);
   const id = useId();
   const groups = groupBySource(backlinks.data);
+  // The snapshot moves on only when a page listed here changes, not with every page.
+  const snapshot = usePagesSelector(
+    (pages) => pages,
+    (a, b) =>
+      groups.every(
+        ({ sourcePageId }) =>
+          a.get(sourcePageId) === b.get(sourcePageId) &&
+          a.isRow(sourcePageId) === b.isRow(sourcePageId),
+      ),
+  );
   if (groups.length === 0) return null;
   return (
     <section

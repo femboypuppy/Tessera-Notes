@@ -53,7 +53,10 @@ design tokens:
 pnpm --dir docs brand
 ```
 
-It writes `assets/brand/` and copies the favicon set into `docs/public/`.
+It writes `assets/brand/`, copies the favicon set and the logo into `docs/public/` and
+`apps/web/public/`, and regenerates the desktop app's icons with `tauri icon`. The mark is a leaf
+of four mosaic tiles; `logo-mark.svg` and `favicon.svg` follow the system's color scheme, and
+`logo-mark-light.svg` and `logo-mark-dark.svg` follow the docs site's theme toggle.
 
 ## Deploying (GitHub Pages)
 

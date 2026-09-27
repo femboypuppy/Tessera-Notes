@@ -1,5 +1,12 @@
 import { getPageProps, observePageProps, type PageMeta } from '@tessera/core';
-import { useAppContext, useContributions, usePageDoc, usePages } from '@tessera/core/react';
+import {
+  useAncestors,
+  useAppContext,
+  useContributions,
+  usePage,
+  usePageDoc,
+  usePagesSelector,
+} from '@tessera/core/react';
 import { Button, cn, EmptyState, FeatureBoundary, Skeleton } from '@tessera/ui';
 import { Blocks, FileQuestion, RotateCcw, Trash2 } from 'lucide-react';
 import { Suspense, useCallback, useEffect, useRef, useState } from 'react';
@@ -39,12 +46,11 @@ function useDisplayProps(pageId: string): { fullWidth: boolean | null; smallText
 function TrashBanner({ page }: { page: PageMeta }) {
   const ctx = useAppContext();
   const navigate = useNavigate();
-  const snapshot = usePages();
+  const ancestors = useAncestors(page.id);
   // The page may be in the trash through an ancestor; restore the page that was trashed.
   const trashedRoot =
-    [page, ...[...snapshot.ancestors(page.id)].reverse()].find(
-      (candidate) => candidate.trashedAt !== undefined,
-    ) ?? page;
+    [page, ...[...ancestors].reverse()].find((candidate) => candidate.trashedAt !== undefined) ??
+    page;
   return (
     <div
       role="status"
@@ -145,8 +151,8 @@ export function PageView() {
   const { pageId = '' } = useParams();
   const ctx = useAppContext();
   const location = useLocation();
-  const snapshot = usePages();
-  const page = snapshot.get(pageId);
+  const page = usePage(pageId);
+  const trashed = usePagesSelector((pages) => pages.isTrashed(pageId));
   const topSections = useContributions('pageTopSections');
   const footerSections = useContributions('pageFooterSections');
   const display = useDisplayProps(pageId);
@@ -184,7 +190,6 @@ export function PageView() {
     );
   }
 
-  const trashed = snapshot.isTrashed(page.id);
   const readOnly = trashed || viewOnly;
   // Tables, boards and calendars need the room, so database pages are wide unless they say not.
   const fullWidth = display.fullWidth ?? page.kind === 'database';
