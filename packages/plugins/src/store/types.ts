@@ -37,6 +37,8 @@ export interface InstalledPlugin {
 /** The code of an installed plugin. */
 export interface InstalledPluginCode {
   code: string;
+  /** The renderer module, when the manifest names one. */
+  renderer?: string;
   readme?: string;
 }
 

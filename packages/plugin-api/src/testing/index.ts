@@ -18,6 +18,7 @@
  * expect(harness.openedPages).toHaveLength(1);
  */
 import { PluginError } from '../errors';
+import type { DefinedRenderer } from '../index';
 import { PLUGIN_API_VERSION, PLUGIN_PERMISSIONS, type PluginPermission } from '../permissions';
 import { resolveRowInput, runRowQuery } from '../query';
 import { resolveSettingsValues, validateSettingValue, type SettingPrimitive } from '../settings';
@@ -42,6 +43,7 @@ import type {
   PluginApi,
   PluginDefinition,
   PluginSurface,
+  RenderFunction,
   RowInput,
   SettingsSchema,
   SettingsValues,
@@ -90,6 +92,8 @@ export interface TestHarnessOptions {
   currentPageId?: string | null;
   theme?: Partial<ThemeInfo>;
   plugin?: { id?: string; name?: string; version?: string };
+  /** The plugin's renderer module (its `defineRenderer` export), for `api.ui.render`. */
+  renderer?: DefinedRenderer;
   /** The clock for timestamps. Default `Date.now`. */
   now?: () => number;
 }
@@ -479,6 +483,22 @@ export function createTestHarness<S extends SettingsSchema>(
         },
         async notify(input) {
           notifications.push(typeof input === 'string' ? { title: input } : input);
+        },
+        async render(name, input) {
+          // Like the app: JSON in and out, and the same errors.
+          const renderers = options.renderer?.renderers;
+          if (!renderers)
+            throw new PluginError(
+              'not_found',
+              `${info.name} has no renderer: its manifest names none.`,
+            );
+          const render = Object.hasOwn(renderers, name)
+            ? (renderers[name] as RenderFunction | undefined)
+            : undefined;
+          if (typeof render !== 'function')
+            throw new PluginError('not_found', `The renderer has no function "${name}".`);
+          const output = await render(structuredClone(input ?? null));
+          return JSON.parse(JSON.stringify(output ?? null)) as never;
         },
       },
       pages: {

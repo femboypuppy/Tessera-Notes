@@ -4,8 +4,10 @@ import { z } from 'zod';
  * Version of the plugin API. A plugin declares the version it was built against in its manifest
  * (`apiVersion`); the host refuses plugins that need a newer version and keeps adapters for older
  * ones, so API changes never break installed plugins.
+ *
+ * Version 2 added renderers: the manifest's `renderer` module and `api.ui.render`.
  */
-export const PLUGIN_API_VERSION = 1;
+export const PLUGIN_API_VERSION = 2;
 
 /**
  * Permissions without parameters. `network:<domain>` is the only parameterized permission.
@@ -97,6 +99,12 @@ export const pluginManifestSchema = z.object({
   description: z.string().trim().max(500),
   /** JavaScript entry (ES module) run inside the sandbox, relative to the manifest. */
   entry: bundlePath,
+  /**
+   * Optional second ES module (plugin API 2): render functions for heavy work, such as a diagram
+   * library. It loads once, in a hidden frame shared by the plugin's panels and blocks, which
+   * call it with `api.ui.render`, so they don't each load it.
+   */
+  renderer: bundlePath.optional(),
   permissions: z
     .array(pluginPermissionSchema)
     .max(32)

@@ -8,7 +8,9 @@ import { describe, expect, expectTypeOf, it } from 'vitest';
 import {
   defineBlock,
   definePlugin,
+  defineRenderer,
   isPluginDefinition,
+  isRendererDefinition,
   isPluginError,
   PLUGIN_API_VERSION,
   PLUGIN_DEFINITION_MARKER,
@@ -16,6 +18,7 @@ import {
   PLUGIN_ITEM_ID_PATTERN,
   PLUGIN_PERMISSIONS,
   PluginError,
+  RENDERER_DEFINITION_MARKER,
   type PluginApi,
 } from './index';
 
@@ -97,6 +100,32 @@ describe('isPluginDefinition', () => {
     ['blocks that are not an object', { [PLUGIN_DEFINITION_MARKER]: 1, blocks: 'x' }],
   ])('rejects %s', (_label, value) => {
     expect(isPluginDefinition(value)).toBe(false);
+  });
+});
+
+describe('defineRenderer', () => {
+  it('marks the render functions and keeps their types', async () => {
+    const renderer = defineRenderer({
+      diagram: async (input: { code: string }) => ({ svg: `<svg>${input.code}</svg>` }),
+      size: () => 3,
+    });
+    expect(renderer[RENDERER_DEFINITION_MARKER]).toBe(1);
+    expect(isRendererDefinition(renderer)).toBe(true);
+    await expect(renderer.renderers.diagram({ code: 'A' })).resolves.toEqual({
+      svg: '<svg>A</svg>',
+    });
+    expectTypeOf(renderer.renderers.diagram).parameter(0).toEqualTypeOf<{ code: string }>();
+    expectTypeOf(renderer.renderers.size).returns.toEqualTypeOf<number>();
+  });
+
+  it.each([
+    ['null', null],
+    ['an unmarked object', { renderers: { a: () => 1 } }],
+    ['no functions', { [RENDERER_DEFINITION_MARKER]: 1 }],
+    ['a function that is not one', { [RENDERER_DEFINITION_MARKER]: 1, renderers: { a: 1 } }],
+    ['a plugin definition', definePlugin({ activate: () => undefined })],
+  ])('isRendererDefinition rejects %s', (_label, value) => {
+    expect(isRendererDefinition(value)).toBe(false);
   });
 });
 

@@ -30,9 +30,13 @@ describe.each(stores)('%s plugin store', (_name, open) => {
   it('saves, lists and deletes plugins with their code', async () => {
     const store = await open();
     await store.put(record('a'), { code: 'export default 1', readme: '# A' });
-    await store.put(record('b'), { code: 'export default 2' });
+    await store.put(record('b'), { code: 'export default 2', renderer: 'export default 3' });
     expect((await store.list()).map((plugin) => plugin.id).sort()).toEqual(['a', 'b']);
     expect(await store.getCode('a')).toEqual({ code: 'export default 1', readme: '# A' });
+    expect(await store.getCode('b')).toEqual({
+      code: 'export default 2',
+      renderer: 'export default 3',
+    });
     await store.put({ ...record('a'), enabled: false });
     expect((await store.get('a'))?.enabled).toBe(false);
     expect((await store.getCode('a'))?.code).toBe('export default 1');

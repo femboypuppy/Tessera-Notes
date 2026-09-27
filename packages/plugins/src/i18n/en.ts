@@ -25,6 +25,7 @@ export const en = {
   reload: 'Reload',
   panelUnavailable: '{plugin} isn’t running',
   panelFrameTitle: '{title} panel ({plugin})',
+  rendererFrameTitle: '{plugin} renderer',
   blockFrameTitle: '{title} ({plugin})',
   notificationFrom: 'From {plugin}',
   commandFailed: 'A {plugin} command failed',
@@ -213,6 +214,11 @@ export const en = {
   errApiTooNew:
     '{plugin} was made for a newer version of Tessera (plugin API {version}). Update Tessera to use it.',
   errAppTooOld: '{plugin} needs Tessera {version} or later.',
+  errRendererNeedsApi2:
+    '{plugin} has a renderer, which needs "apiVersion": 2 in its manifest (older Tessera versions can’t run it).',
+  errNoRendererModule: '{plugin} has no renderer: its manifest names none.',
+  errRendererApi: 'A renderer has no API: pass what it needs in its input.',
+  errRendererUnresponsive: '{plugin}’s renderer stopped responding and was closed.',
   errZipUnreadable: 'The file couldn’t be read as a zip archive.',
   errTooLarge: 'The plugin is too large ({size}). The limit is {limit}.',
   errTooManyFiles: 'The plugin has too many files (more than {limit}).',
