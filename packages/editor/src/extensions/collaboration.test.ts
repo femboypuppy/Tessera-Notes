@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import * as Y from 'yjs';
 import { deleteBlocks, moveBlock } from '../actions/blocks';
 import { createTestEditor, linkDocs, pressKey, typeText } from '../test-utils';
+import { editAtCaret } from './collaboration';
 
 const cleanups: Array<() => void> = [];
 afterEach(() => {
@@ -138,4 +139,37 @@ describe('Yjs sync', () => {
       while (cleanups.length) cleanups.pop()?.();
     }
   }, 60_000);
+});
+
+describe('editAtCaret', () => {
+  it('places text typed next to identical characters at the caret', () => {
+    // A space typed in front of someone else's: a diff alone takes theirs for the new one.
+    expect(editAtCaret('Notes: ', 'Notes:  ', 7)).toEqual({ index: 6, remove: 0, insert: ' ' });
+    expect(editAtCaret('aa', 'aaa', 1)).toEqual({ index: 0, remove: 0, insert: 'a' });
+    expect(editAtCaret('abab', 'ababab', 2)).toEqual({ index: 0, remove: 0, insert: 'ab' });
+  });
+
+  it('removes the identical character the caret was next to', () => {
+    // Backspace between two "a"s removes the first one.
+    expect(editAtCaret('aa', 'a', 0)).toEqual({ index: 0, remove: 1, insert: '' });
+    expect(editAtCaret('x  y', 'x y', 1)).toEqual({ index: 1, remove: 1, insert: '' });
+  });
+
+  it('leaves edits a plain diff places right alone', () => {
+    expect(editAtCaret('abc', 'abcd', 4)).toBeNull();
+    expect(editAtCaret('aa', 'aaa', 3)).toBeNull();
+    expect(editAtCaret('aa', 'a', 1)).toBeNull();
+  });
+
+  it('ignores changes that are not an edit at the caret', () => {
+    expect(editAtCaret('hello world', 'hello x', 7)).toBeNull(); // typed over a selection
+    expect(editAtCaret('(c) x', '© x', 3)).toBeNull(); // an input rule
+    expect(editAtCaret('abc', 'abd', 3)).toBeNull();
+    expect(editAtCaret('aa', 'aaa', 0)).toBeNull();
+  });
+
+  it('never splits a character outside the Basic Plane', () => {
+    expect(editAtCaret('x😀', 'x😀😀', 3)).toEqual({ index: 1, remove: 0, insert: '😀' });
+    expect(editAtCaret('x😀', 'x😀😀', 4)).toBeNull();
+  });
 });
