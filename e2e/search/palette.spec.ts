@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { newPage, openPalette, openWorkspace, palette, seed, write } from './helpers';
+import { newPage, openPalette, openWorkspace, palette, seed, whenIndexed, write } from './helpers';
 
 test.describe('command palette', () => {
   test('opens with Mod+K, finds a page by title and opens it', async ({ page }) => {
@@ -33,6 +33,31 @@ test.describe('command palette', () => {
     await expect(contentHit).toHaveAttribute('aria-selected', 'true');
     await page.keyboard.press('Enter');
     await expect(page.getByRole('textbox', { name: 'Page title' })).toHaveValue('Launch checklist');
+  });
+
+  test('finds a page by the new title of a page it links to', async ({ page }) => {
+    await openWorkspace(page);
+    const apollo = await newPage(page, 'Apollo');
+    const notes = await newPage(page, 'Mission notes');
+    await write(page, notes, [['Read the ', { link: apollo }, ' briefing first.']]);
+    await page
+      .getByRole('navigation', { name: 'Sidebar' })
+      .getByRole('treeitem', { name: 'Apollo' })
+      .click();
+    const title = page.getByRole('textbox', { name: 'Page title' });
+    await expect(title).toHaveValue('Apollo');
+    await title.fill('Artemis');
+    await whenIndexed(page);
+
+    await openPalette(page);
+    await page.keyboard.type('artemis');
+    const hit = palette(page).getByRole('option', { name: /Mission notes/ });
+    await expect(hit).toContainText('Read the Artemis briefing');
+    await expect(hit.locator('mark')).toHaveText('Artemis');
+    await page.keyboard.press('Escape');
+    await openPalette(page);
+    await page.keyboard.type('apollo');
+    await expect(palette(page).getByText('No results for “apollo”')).toBeVisible();
   });
 
   test('runs a command and shows its shortcut', async ({ page }) => {
