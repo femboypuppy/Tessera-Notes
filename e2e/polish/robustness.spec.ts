@@ -84,10 +84,11 @@ test.describe('robustness', () => {
       const errors = [...watchErrors(people.first.page), ...watchErrors(people.second.page)];
       await caretAfterNotes(people.first);
       await caretAfterNotes(people.second);
-      // At a typing speed people have, both at once, from the same spot.
+      // At a typing speed people have, both at once, from the same spot, with words that start
+      // with the same letter.
       await Promise.all([
         people.first.page.keyboard.type('engine room', { delay: 90 }),
-        people.second.page.keyboard.type('the mill', { delay: 90 }),
+        people.second.page.keyboard.type('east wing', { delay: 90 }),
       ]);
       // Both browsers converge, and each person's words stay whole and in order.
       await expect
@@ -97,7 +98,7 @@ test.describe('robustness', () => {
           { timeout: 20_000 },
         )
         .toBe(true);
-      expect(['Notes: engine roomthe mill', 'Notes: the millengine room']).toContain(
+      expect(['Notes: engine roomeast wing', 'Notes: east wingengine room']).toContain(
         await firstBlockText(people.first),
       );
       expect(errors).toEqual([]);
