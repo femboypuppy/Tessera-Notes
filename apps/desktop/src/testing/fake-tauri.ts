@@ -643,15 +643,18 @@ export function installFakeTauri(options: FakeTauriOptions = {}): void {
       const run = state.mirrorRuns[workspaceId];
       if (!run) throw fail('invalid', 'no mirror run in progress');
       const files = state.mirror[workspaceId] ?? {};
+      // Kept: files an earlier run wrote that this one left as they were.
+      const keep = Array.isArray(args.keep) ? args.keep.map(String) : [];
+      const kept = new Set([...run, ...keep.filter((path) => path in files)]);
       let removed = 0;
       for (const path of Object.keys(files)) {
-        if (!run.includes(path)) {
+        if (!kept.has(path)) {
           delete files[path];
           removed += 1;
         }
       }
       state.mirrorRuns[workspaceId] = null;
-      return { files: run.length, removed };
+      return { files: kept.size, removed };
     },
     secret_get: (args) => state.secrets[new URL(String(args.server)).origin] ?? null,
     secret_set: (args) => {

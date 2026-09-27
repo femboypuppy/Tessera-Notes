@@ -79,7 +79,11 @@ export interface DesktopBackend {
 
   mirrorBegin(workspaceId: string): Promise<void>;
   mirrorWrite(workspaceId: string, path: string, bytes: Uint8Array): Promise<boolean>;
-  mirrorFinish(workspaceId: string): Promise<MirrorReport>;
+  /**
+   * Ends a run: removes the files an earlier run wrote and this one didn't write or `keep` (the
+   * files an incremental run left as they were).
+   */
+  mirrorFinish(workspaceId: string, keep?: readonly string[]): Promise<MirrorReport>;
 
   getSecret(server: string): Promise<string | null>;
   setSecret(server: string, token: string): Promise<void>;

@@ -251,6 +251,30 @@ export interface ExportResult {
   durationMs: number;
 }
 
+/** Result of an {@link ExportSession} run. */
+export interface ExportSessionResult extends ExportResult {
+  /** Every file of the export after the run: written by it or by an earlier run. */
+  paths: string[];
+}
+
+/**
+ * An export kept up to date in place (the desktop mirror): each run writes only the files that
+ * changed since the previous one, where a full export would read and write every page. The first
+ * run writes everything.
+ */
+export interface ExportSession {
+  /**
+   * `changed` names the pages and databases whose docs changed since the previous run; renames,
+   * moves, deletions and what links show of other pages the session works out itself.
+   */
+  run(
+    changed: ReadonlySet<string>,
+    sink: ExportSink,
+    onProgress: (progress: ExportProgress) => void,
+    signal: AbortSignal,
+  ): Promise<ExportSessionResult>;
+}
+
 /**
  * Writes pages to files. Implementations: a basic markdown exporter (core) and the markdown zip,
  * JSON backup, HTML and PDF exporters (`@tessera/importers`). The desktop app's markdown mirror
@@ -270,6 +294,8 @@ export interface Exporter {
     onProgress: (progress: ExportProgress) => void,
     signal: AbortSignal,
   ): Promise<ExportResult>;
+  /** Opens an export that later runs update in place (optional; the desktop mirror uses it). */
+  session?(scope: ExportScope, context: ExportContext): ExportSession;
 }
 
 // ---------------------------------------------------------------------------------------------
