@@ -10,8 +10,7 @@ import { createPage, createWorkspace, editor, outline, setDoc, type NodeJSON } f
  * to a bubble listener on the window, plus the mutation observer work the typed text causes (some
  * browsers run it after the input event). That covers ProseMirror's keymaps, reading the typed text
  * from the DOM, the transaction, plugins and decorations, the view update, the Yjs update, React
- * updates, and any layout they force. The budget is 16 ms in Chromium, the reference browser;
- * Firefox is held to 24 ms until y-tiptap's per-keystroke O(page) work is fixed upstream.
+ * updates, and any layout they force. The budget is 16 ms in Chromium and Firefox alike.
  *
  * The test also reports the end-to-end time (keydown to finished layout) next to the browser's own
  * floor: the same keystrokes typed into a bare contenteditable with an identical DOM. On long pages
@@ -388,12 +387,10 @@ test.describe('2,000-block page', { tag: '@perf' }, () => {
     const steady = processing.slice(5);
     console.log(report('editor processing per keystroke', steady));
     console.log(report('keystroke to layout, end to end', latency.slice(5)));
-    // SPEC §10: 16 ms p95 in Chromium, the reference browser and the Windows desktop engine
-    // (WebView2). Firefox is held to 24 ms: at 2,000 blocks about 6 ms of each keystroke there is
-    // y-tiptap's O(page size) sync and undo bookkeeping (the editor's own plugins take < 0.3 ms;
-    // HANDOFF/integration.md has the profile). Firefox measured 11-16 ms p95 alone, 12-21 under load.
+    // SPEC §10: 16 ms p95 in Chromium and Firefox alike. The y-tiptap work per keystroke that grows
+    // with the page (diffing every block, walking to the caret) is trimmed by `TesseraCollaboration`.
     const p95 = percentile(steady, 0.95);
-    const budget = browserName === 'chromium' ? 16 : 24;
+    const budget = 16;
     test.info().annotations.push({
       type: 'performance',
       description: `${browserName}: editor processing p95 ${p95.toFixed(1)} ms (budget ${budget} ms)`,

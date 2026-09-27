@@ -907,7 +907,7 @@ Every agent also owns `HANDOFF/<area>.md`, `assets/screenshots/<area>/` and `e2e
 |---|---|---|
 | Startup JS (the shell, before the editor chunk) | ≤ 250 KB gzip | `vite build` output: the entry chunk plus its static imports. Baseline with every feature stubbed: 215 KB. |
 | Cold start with 5,000 pages | < 2 s to an interactive sidebar | `scripts/bench` (Agent 09) |
-| Typing latency on a 2,000-block page | < 16 ms p95 (Chromium, the reference and the Windows desktop engine); Firefox < 24 ms until y-tiptap's O(page) keystroke work is fixed upstream | `e2e/editor/performance.spec.ts` (the editor's processing per keystroke) |
+| Typing latency on a 2,000-block page | < 16 ms p95 in Chromium (also the Windows desktop engine) and Firefox | `e2e/editor/performance.spec.ts` (the editor's processing per keystroke) |
 | Search | < 50 ms p95 per query on 5,000 pages; palette < 50 ms p95 per keystroke | Agent 05's benchmark |
 | Database filtering | < 50 ms for 10,000 rows; table scrolls 10,000 rows at 60 fps | Agent 04's performance tests |
 | Graph | fluid with 10,000 nodes; layout off the main thread | Agent 05 |
