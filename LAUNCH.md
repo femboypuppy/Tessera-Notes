@@ -3,6 +3,11 @@
 Drafts for launch day. Edit freely; they're written to be humble, specific and easy to try.
 Links assume the repository is `github.com/femboypuppy/Tessera-Notes` and the docs are on GitHub Pages.
 
+The product is **Tessera Notes**: use the full name in titles and first mentions, since other
+projects are called Tessera, and "Tessera" for short after that. The Docker image
+(`ghcr.io/femboypuppy/tessera`), the `tessera-server` command and the `@tessera/*` packages keep
+their names.
+
 **Before you post anything:** the [launch-day checklist](#launch-day-checklist) at the bottom.
 
 - [Show HN](#show-hn)
@@ -19,18 +24,18 @@ Links assume the repository is `github.com/femboypuppy/Tessera-Notes` and the do
 
 **Title** (HN allows 80 characters; keep it plain, no superlatives):
 
-> Show HN: Tessera – a local-first, self-hostable Notion/Obsidian alternative
+> Show HN: Tessera Notes – a local-first, self-hosted Notion/Obsidian alternative
 
 Alternatives:
 
-- Show HN: Tessera – open-source notes with databases, backlinks and real-time sync
-- Show HN: Tessera – Notion-style blocks and databases that work offline, MIT licensed
+- Show HN: Tessera Notes – databases, backlinks and real-time sync, open source
+- Show HN: Tessera Notes – Notion-style databases that work offline, MIT licensed
 
 **URL:** `https://github.com/femboypuppy/Tessera-Notes`
 
 **Text:**
 
-> Hi HN! Tessera is an open-source (MIT) knowledge app: Notion-style blocks and databases,
+> Hi HN! Tessera Notes is an open-source (MIT) knowledge app: Notion-style blocks and databases,
 > Obsidian-style [[wikilinks]], backlinks and a graph, plus real-time collaboration and sandboxed
 > plugins.
 >
@@ -87,11 +92,11 @@ run, what it stores, and how to back it up.
 
 **Title:**
 
-> Tessera: a self-hosted, local-first alternative to Notion + Obsidian (docker compose, SQLite, MIT)
+> Tessera Notes: a self-hosted, local-first alternative to Notion + Obsidian (docker compose, SQLite, MIT)
 
 **Post:**
 
-> Hi r/selfhosted! I've been building **Tessera**, an open-source knowledge app: Notion-style
+> Hi r/selfhosted! I've been building **Tessera Notes**, an open-source knowledge app: Notion-style
 > pages and databases, Obsidian-style [[links]] and graph, and real-time collaboration, synced
 > through a server you run.
 >
@@ -146,11 +151,11 @@ editing (`sync/presence`) and the page in dark mode.
 
 **Title:**
 
-> Tessera: an MIT-licensed, local-first knowledge app (blocks, databases, backlinks, real-time sync)
+> Tessera Notes: an MIT-licensed, local-first knowledge app (blocks, databases, backlinks, real-time sync)
 
 **Post:**
 
-> Hi all! Tessera is a knowledge app I've been building in the open under the MIT license. Think
+> Hi all! Tessera Notes is a knowledge app I've been building in the open under the MIT license. Think
 > Notion's blocks and databases plus Obsidian's links and graph, local-first, with a server you
 > can self-host for sync and collaboration.
 >
@@ -176,7 +181,7 @@ editing (`sync/presence`) and the page in dark mode.
 
 | Field            | Draft                                                                               |
 | ---------------- | ----------------------------------------------------------------------------------- |
-| Name             | Tessera                                                                             |
+| Name             | Tessera Notes                                                                       |
 | Tagline (≤ 60)   | Your notes, your server. Notion's power, Obsidian's freedom.                        |
 | Alt tagline      | Open-source notes and databases that work offline                                   |
 | Topics           | Productivity, Note-taking, Open Source, Developer Tools                             |
@@ -187,15 +192,15 @@ editing (`sync/presence`) and the page in dark mode.
 
 **Description (≤ 260 characters):**
 
-> Tessera is an open-source knowledge app with Notion-style blocks and databases, Obsidian-style
-> links and a graph, and real-time collaboration. It's local-first and works offline; sync runs
-> on a server you host in one container. MIT licensed.
+> Tessera Notes is an open-source knowledge app with Notion-style blocks and databases,
+> Obsidian-style links and a graph, and real-time collaboration. It's local-first and works
+> offline; sync runs on a server you host in one container. MIT licensed.
 
 **Maker's first comment:**
 
 > Hi Product Hunt! 👋
 >
-> I built Tessera because I wanted Notion's databases without giving up ownership of my notes.
+> I built Tessera Notes because I wanted Notion's databases without giving up ownership of my notes.
 > Everything lives on your device and works offline. When you want to share, you run the server
 > yourself (one Docker container) and invite people.
 >
@@ -216,7 +221,7 @@ editing (`sync/presence`) and the page in dark mode.
 
 Each post fits 280 characters (Bluesky: 300, Mastodon: 500). Attach one image or GIF to each.
 
-1. > I've been building Tessera: an open-source, local-first knowledge app. Notion's blocks and
+1. > I've been building Tessera Notes: an open-source, local-first knowledge app. Notion's blocks and
    > databases, Obsidian's [[links]] and graph, real-time collaboration, and a server you host
    > in one container. MIT licensed. 🧵
    >
@@ -272,7 +277,8 @@ if people ask for details.*
 Most note apps make you choose. Notion has blocks, databases and real-time collaboration, but
 your notes live on someone else's server. Obsidian keeps everything in files on your disk, but
 collaboration and databases are afterthoughts. I wanted both, so I built
-[Tessera](https://github.com/femboypuppy/Tessera-Notes): open source, local-first, and self-hostable.
+[Tessera Notes](https://github.com/femboypuppy/Tessera-Notes) (Tessera for short): open source,
+local-first, and self-hostable.
 
 This post is about the core decision that makes it work: every piece of content is a
 [Yjs](https://github.com/yjs/yjs) document.
@@ -403,7 +409,8 @@ what you find.
 - [ ] The quickstart commands work when copy-pasted on a clean machine.
 - [ ] The docs site is live, and search works.
 - [ ] The social preview image is set (**Settings → General → Social preview**:
-      `assets/brand/social-preview.png`).
+      `assets/brand/social-preview.png`, with the leaf logo and "Tessera Notes"; upload it again
+      whenever it changes, since GitHub keeps its own copy).
 - [ ] Discussions are enabled, with a pinned **Welcome** discussion (who you are, what feedback
       you want, where to report bugs) and a **Q&A** category.
 - [ ] At least ten `good first issue`s are filed, each with a pointer to the code (drafts are in
