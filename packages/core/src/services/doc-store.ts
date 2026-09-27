@@ -11,8 +11,10 @@ import * as Y from 'yjs';
  *   was never stored.
  * - `compact` replaces the stored updates with one equivalent update and must never lose an
  *   update stored concurrently (compare what you merged with what is stored before replacing).
- * - `watch` (optional) reports updates stored by *other* instances (other tabs or windows). The
- *   runtime applies them to the open doc without storing them again.
+ * - `watch` (optional) reports updates written by *other* instances (other tabs or windows). The
+ *   runtime applies them to the open doc without storing them again. An implementation may
+ *   report an update before it is durable, and must then make sure it ends up stored even if
+ *   its writer never commits it (the IndexedDB store stores those itself).
  *
  * @example
  * const update = await store.load('page:abc');
