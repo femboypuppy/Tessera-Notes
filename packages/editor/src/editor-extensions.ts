@@ -1,8 +1,8 @@
 import type { AnyExtension, NodeViewRenderer } from '@tiptap/core';
-import { Collaboration } from '@tiptap/extension-collaboration';
 import { Dropcursor, Gapcursor, UndoRedo } from '@tiptap/extensions';
 import type * as Y from 'yjs';
 import { BlockIds } from './extensions/block-ids';
+import { TesseraCollaboration } from './extensions/collaboration';
 import { DeferredScroll } from './extensions/deferred-scroll';
 import { HistoryGuard, HistoryKeys } from './extensions/history-guard';
 import { LiveSelection } from './extensions/live-selection';
@@ -54,7 +54,7 @@ export function editorExtensions(options: EditorExtensionsOptions = {}): AnyExte
   // With a fragment, Yjs owns undo and redo; without one (previews, tests) ProseMirror's history does.
   if (options.fragment)
     extensions.push(
-      Collaboration.configure({ fragment: options.fragment }),
+      TesseraCollaboration.configure({ fragment: options.fragment }),
       RemoteEditCaret.configure({ fragment: options.fragment }),
       HistoryKeys,
       HistoryGuard,
