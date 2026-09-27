@@ -3,6 +3,7 @@ import type {
   Exporter,
   ExportProgress,
   ExportScope,
+  ExportSession,
   ExportSink,
 } from '@tessera/core';
 import type { HtmlLabels } from './export/html';
@@ -43,6 +44,18 @@ export function createMarkdownExporter(
     ) {
       const { exportMarkdown } = await import('./export/markdown');
       return exportMarkdown(scope, context, sink, onProgress, signal, id, options);
+    },
+    session(scope: ExportScope, context: ExportContext): ExportSession {
+      // The export's code loads with the first run, like `run`.
+      let session: Promise<ExportSession> | null = null;
+      return {
+        async run(changed, sink, onProgress, signal) {
+          session ??= import('./export/markdown').then(
+            ({ MarkdownExportSession }) => new MarkdownExportSession(scope, context, id, options),
+          );
+          return (await session).run(changed, sink, onProgress, signal);
+        },
+      };
     },
   };
 }

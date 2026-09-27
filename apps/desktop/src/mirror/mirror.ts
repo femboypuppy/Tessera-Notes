@@ -2,7 +2,9 @@ import {
   normalizeImportPath,
   toError,
   type AppContext,
+  type ExportContext,
   type Exporter,
+  type ExportSession,
   type ExportSink,
 } from '@tessera/core';
 import type { DesktopBackend } from '../backend/backend';
@@ -55,9 +57,11 @@ function enabledIds(ctx: AppContext): string[] {
 
 /**
  * Keeps `<workspace folder>/markdown/` in step with the workspace: after edits settle (a few
- * seconds, at most half a minute), the whole workspace is exported again. Unchanged files are
- * not rewritten and files of deleted or renamed pages are removed (`mirror_finish`), so sync
- * tools and file watchers only see real changes.
+ * seconds, at most half a minute), the export runs again. With an exporter that keeps a session,
+ * a run writes only what changed since the last one (the first run of a session writes
+ * everything); otherwise the whole workspace is exported. Unchanged files are not rewritten and
+ * files of deleted or renamed pages are removed (`mirror_finish`), so sync tools and file
+ * watchers only see real changes.
  */
 export class MarkdownMirror {
   readonly status: Store<MirrorStatus>;
@@ -68,6 +72,10 @@ export class MarkdownMirror {
   private readonly offs: Array<() => void> = [];
   private controller: AbortController | null = null;
   private stopped = false;
+  /** The export the runs update, with the exporter that opened it. */
+  private session: { exporter: Exporter; session: ExportSession } | null = null;
+  /** Pages and databases whose docs changed since the last run. */
+  private changed = new Set<string>();
 
   constructor(
     private readonly ctx: AppContext,
@@ -96,8 +104,14 @@ export class MarkdownMirror {
     const schedule = () => this.schedule();
     const events = this.ctx.events;
     this.offs.push(
-      events.on('doc.changed', schedule),
-      events.on('database.changed', schedule),
+      events.on('doc.changed', ({ pageId }) => {
+        this.changed.add(pageId);
+        this.schedule();
+      }),
+      events.on('database.changed', ({ databaseId }) => {
+        this.changed.add(databaseId);
+        this.schedule();
+      }),
       events.on('page.created', schedule),
       events.on('page.updated', schedule),
       events.on('page.deleted', schedule),
@@ -105,6 +119,8 @@ export class MarkdownMirror {
         if (scope !== 'device' || key !== MIRROR_SETTING) return;
         const enabled = this.isEnabled();
         this.status.set((status) => ({ ...status, enabled }));
+        // The folder may change while the copy is off: the next run writes everything.
+        this.session = null;
         if (enabled) void this.runNow();
       }),
     );
@@ -160,24 +176,48 @@ export class MarkdownMirror {
     const status = await this.backend.workspaceStatus(this.workspaceId).catch(() => null);
     if (!status?.exists) return; // Nothing to mirror before the first edit creates the folder.
     this.status.set((s) => ({ ...s, running: true }));
-    this.controller = new AbortController();
+    const controller = new AbortController();
+    this.controller = controller;
+    // Docs that change from here on are the next run's.
+    const changed = this.changed;
+    this.changed = new Set();
     try {
       await this.backend.mirrorBegin(this.workspaceId);
       const sink = new FolderExportSink(this.backend, this.workspaceId);
-      await exporter.run(
-        { kind: 'workspace' },
-        {
-          workspace: this.ctx.workspace,
-          loadPageDoc: (id) => this.ctx.loadPageDoc(id),
-          loadDatabaseDoc: (id) => this.ctx.loadDatabaseDoc(id),
-          assets: this.ctx.services.assetStore,
-          codec: this.ctx.services.markdownCodec,
-        },
-        sink,
-        () => undefined,
-        this.controller.signal,
-      );
-      const report = await this.backend.mirrorFinish(this.workspaceId);
+      const context: ExportContext = {
+        workspace: this.ctx.workspace,
+        loadPageDoc: (id) => this.ctx.loadPageDoc(id),
+        loadDatabaseDoc: (id) => this.ctx.loadDatabaseDoc(id),
+        assets: this.ctx.services.assetStore,
+        codec: this.ctx.services.markdownCodec,
+      };
+      let keep: string[] | undefined;
+      if (exporter.session) {
+        if (this.session?.exporter !== exporter)
+          this.session = { exporter, session: exporter.session({ kind: 'workspace' }, context) };
+        const result = await this.session.session.run(
+          changed,
+          sink,
+          () => undefined,
+          controller.signal,
+        );
+        keep = result.paths;
+      } else {
+        await exporter.run(
+          { kind: 'workspace' },
+          context,
+          sink,
+          () => undefined,
+          controller.signal,
+        );
+      }
+      if (controller.signal.aborted) {
+        // A stopped run may have skipped files: removing what it didn't write would lose them.
+        for (const id of changed) this.changed.add(id);
+        this.status.set((s) => ({ ...s, running: false }));
+        return;
+      }
+      const report = await this.backend.mirrorFinish(this.workspaceId, keep);
       this.status.set((s) => ({
         ...s,
         running: false,
@@ -186,6 +226,9 @@ export class MarkdownMirror {
         error: null,
       }));
     } catch (error) {
+      // The next run starts over and writes everything.
+      this.session = null;
+      for (const id of changed) this.changed.add(id);
       this.status.set((s) => ({ ...s, running: false, error: toError(error).message }));
     } finally {
       this.controller = null;

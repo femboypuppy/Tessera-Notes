@@ -114,6 +114,9 @@ importers:
       '@tauri-apps/cli':
         specifier: 2.11.5
         version: 2.11.5
+      '@tessera/importers':
+        specifier: workspace:*
+        version: link:../../packages/importers
       react:
         specifier: 19.3.0
         version: 19.3.0

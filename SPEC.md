@@ -620,9 +620,14 @@ Registering an importer or exporter under an existing ID replaces it; core regis
 Files are `ImportFile`s with normalized paths (`normalizeImportPath` rejects `..` and absolute
 paths). `ImportContext` gives `workspace`, `loadPageDoc`, `loadDatabaseDoc`, `assets`, `codec`,
 `rootTitle` and `parentId`: imports land under a new top-level page. The report has counts,
-issues (warnings and errors with page links) and timing. **`Exporter`**: `{ id, label, scopes, fileExtension?, run(scope, context, sink, onProgress, signal) → ExportResult }`
+issues (warnings and errors with page links) and timing. **`Exporter`**: `{ id, label, scopes, fileExtension?, run(scope, context, sink, onProgress, signal) → ExportResult, session?(scope, context) → ExportSession }`
 writing to an `ExportSink` (a zip, a folder for the desktop mirror, or `MemoryExportSink` in tests).
-Core ships a basic markdown importer and exporter; Agent 08 replaces them.
+An `ExportSession` keeps an export up to date in place: `run(changed, sink, onProgress, signal)`
+writes only the files that changed since its previous run (`changed` names the pages and databases
+whose docs changed; renames, moves, deletions and what links show of other pages it works out
+itself) and returns `paths`, every file the export has now, so a caller can delete the rest. The
+desktop mirror uses it when the exporter has one. Core ships a basic markdown importer and exporter
+(without sessions); Agent 08 replaces them.
 
 ```ts
 const [best] = await ctx.importers.detect(files);

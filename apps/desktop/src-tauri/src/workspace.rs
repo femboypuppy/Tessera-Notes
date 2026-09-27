@@ -230,10 +230,12 @@ impl OpenWorkspace {
         Ok(true)
     }
 
-    /// Ends a mirror run: deletes the files the previous run wrote and this one didn't (pages that
-    /// were renamed, moved or deleted). Files the mirror never wrote are never touched.
-    pub fn mirror_finish(&self) -> Result<MirrorReport> {
-        let written = self
+    /// Ends a mirror run: deletes the files the previous run wrote and this one didn't write or
+    /// `keep` (pages that were renamed, moved or deleted). `keep` names the files an incremental
+    /// run left as they were; only files an earlier run wrote count. Files the mirror never wrote
+    /// are never touched.
+    pub fn mirror_finish(&self, keep: &[String]) -> Result<MirrorReport> {
+        let mut written = self
             .mirror
             .lock()
             .map_err(poisoned)?
@@ -245,6 +247,12 @@ impl OpenWorkspace {
             .ok()
             .and_then(|bytes| serde_json::from_slice(&bytes).ok())
             .unwrap_or_default();
+        for file in keep {
+            let key = file.replace('\\', "/");
+            if previous.files.contains(&key) {
+                written.insert(key);
+            }
+        }
         let mut removed = 0;
         for stale in previous
             .files
@@ -703,7 +711,7 @@ mod tests {
         assert!(ws.mirror_write("Apollo.md", b"# Apollo").unwrap());
         assert!(ws.mirror_write("Apollo/Mission.md", b"go").unwrap());
         assert_eq!(
-            ws.mirror_finish().unwrap(),
+            ws.mirror_finish(&[]).unwrap(),
             MirrorReport {
                 files: 2,
                 removed: 0
@@ -718,7 +726,7 @@ mod tests {
         );
         assert!(ws.mirror_write("../escape.md", b"x").is_err());
         assert_eq!(
-            ws.mirror_finish().unwrap(),
+            ws.mirror_finish(&[]).unwrap(),
             MirrorReport {
                 files: 1,
                 removed: 1
@@ -730,6 +738,46 @@ mod tests {
             "files the mirror didn't write stay"
         );
         assert!(ws.mirror_write("x.md", b"x").is_err(), "no run in progress");
+    }
+
+    #[test]
+    fn mirror_keeps_the_files_an_incremental_run_left_as_they_were() {
+        let dir = tempfile::tempdir().unwrap();
+        let workspaces = Workspaces::default();
+        let ws = attach(&workspaces, "ws1", dir.path());
+        ws.write(|_| {}, |db| db.store("ws:ws1", &[1])).unwrap();
+        let root = dir.path().join(MIRROR_DIR);
+        ws.mirror_begin().unwrap();
+        ws.mirror_write("Apollo.md", b"# Apollo").unwrap();
+        ws.mirror_write("Gemini.md", b"# Gemini").unwrap();
+        ws.mirror_finish(&[]).unwrap();
+        std::fs::write(root.join("mine.md"), b"user file").unwrap();
+
+        // Only Gemini changed: Apollo stays. A file the mirror never wrote can't be kept.
+        ws.mirror_begin().unwrap();
+        ws.mirror_write("Gemini.md", b"# Gemini 2").unwrap();
+        let keep = ["Apollo.md".to_string(), "mine.md".to_string()];
+        assert_eq!(
+            ws.mirror_finish(&keep).unwrap(),
+            MirrorReport {
+                files: 2,
+                removed: 0
+            }
+        );
+        assert!(root.join("Apollo.md").exists());
+
+        // Apollo's page was deleted: the next run leaves it out, and the user's file stays.
+        ws.mirror_begin().unwrap();
+        ws.mirror_write("Gemini.md", b"# Gemini 2").unwrap();
+        assert_eq!(
+            ws.mirror_finish(&["mine.md".to_string()]).unwrap(),
+            MirrorReport {
+                files: 1,
+                removed: 1
+            }
+        );
+        assert!(!root.join("Apollo.md").exists());
+        assert!(root.join("mine.md").exists());
     }
 
     #[test]
