@@ -47,6 +47,49 @@ test.describe('local persistence', () => {
     await appendParagraph(page, pageId, 'From tab one');
     await expect.poll(() => readText(second, pageId), { timeout: 2000 }).toBe('From tab one');
   });
+
+  test('shows an edit in another tab while its commit is still on disk', async ({
+    page,
+    context,
+  }) => {
+    // A saturated disk: once `__slowCommitMs` is set, this tab's IndexedDB writes complete late.
+    await page.addInitScript(() => {
+      const transaction = IDBDatabase.prototype.transaction;
+      IDBDatabase.prototype.transaction = function (
+        this: IDBDatabase,
+        ...args: Parameters<IDBDatabase['transaction']>
+      ) {
+        const created = transaction.apply(this, args);
+        const delay = (window as { __slowCommitMs?: number }).__slowCommitMs;
+        if (!delay || args[1] !== 'readwrite') return created;
+        let oncomplete: IDBTransaction['oncomplete'] = null;
+        Object.defineProperty(created, 'oncomplete', {
+          configurable: true,
+          get: () => null,
+          set: (handler: IDBTransaction['oncomplete']) => {
+            oncomplete = handler;
+          },
+        });
+        created.addEventListener('complete', (event) => {
+          setTimeout(() => oncomplete?.call(created, event), delay);
+        });
+        return created;
+      };
+    });
+    await createLocalWorkspace(page, 'Slow disk');
+    const pageId = await createPage(page, 'Shared notes');
+    const second = await context.newPage();
+    await second.goto(`/p/${pageId}`);
+    await expect(pageTree(second).getByRole('treeitem', { name: 'Shared notes' })).toBeVisible();
+
+    await page.evaluate(() => {
+      (window as { __slowCommitMs?: number }).__slowCommitMs = 3000;
+    });
+    await appendParagraph(page, pageId, 'Written on a slow disk');
+    await expect
+      .poll(() => readText(second, pageId), { timeout: 2000 })
+      .toBe('Written on a slow disk');
+  });
 });
 
 test.describe('syncing with a server', () => {

@@ -541,7 +541,10 @@ services: [
 
 **`DocStore`**: `load(docName) → Uint8Array | null` (the merged state), `storeUpdate(docName, update)`
 (durable before resolving), `compact(docName)`, `delete(docName)`, `list(prefix?)`, optional
-`watch(docName, onUpdate)` for other tabs, `flush()`, `dispose()`.
+`watch(docName, onUpdate)` for other tabs' writes, `flush()`, `dispose()`. `watch` may report an
+update before it is durable (the IndexedDB store announces writes before their commit, which can
+take seconds on a busy disk); the store then makes sure it ends up stored even if its tab closes
+first, and the runtime never stores watched updates itself.
 
 ```ts
 const update = Y.encodeStateAsUpdate(doc);

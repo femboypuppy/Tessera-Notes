@@ -11,6 +11,7 @@ import { kitchenSinkDoc } from '@tessera/core/testing';
 import { IDBFactory } from 'fake-indexeddb';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import * as Y from 'yjs';
+import type { ChannelLike } from '../idb/channel';
 import { createChannelHub } from '../testing/channels';
 import { IndexedDbDocStore } from './doc-store';
 import type { StorageErrorInfo } from './storage-errors';
@@ -46,6 +47,50 @@ function docFrom(update: Uint8Array | null): Y.Doc {
   const doc = new Y.Doc();
   if (update) Y.applyUpdate(doc, update);
   return doc;
+}
+
+/**
+ * Slow disks: readwrite transactions commit, but their `complete` event (what makes a write
+ * durable for the store) waits until `release()`.
+ */
+function slowCommits(): { release(): void } {
+  const held: Array<() => void> = [];
+  let holding = true;
+  const transaction = IDBDatabase.prototype.transaction;
+  vi.spyOn(IDBDatabase.prototype, 'transaction').mockImplementation(function (
+    this: IDBDatabase,
+    ...args: Parameters<IDBDatabase['transaction']>
+  ) {
+    const created = transaction.apply(this, args);
+    if (args[1] !== 'readwrite') return created;
+    let oncomplete: IDBTransaction['oncomplete'] = null;
+    Object.defineProperty(created, 'oncomplete', {
+      configurable: true,
+      get: () => null,
+      set: (handler: IDBTransaction['oncomplete']) => {
+        oncomplete = handler;
+      },
+    });
+    created.addEventListener('complete', (event) => {
+      const fire = () => oncomplete?.call(created, event);
+      if (holding) held.push(fire);
+      else fire();
+    });
+    return created;
+  });
+  return {
+    release() {
+      holding = false;
+      for (const fire of held.splice(0)) fire();
+    },
+  };
+}
+
+/** The workspace channel of a tab the test plays itself. */
+function otherTab(channels: ReturnType<typeof createChannelHub>): ChannelLike {
+  const channel = channels('tessera:docs:ws1');
+  if (!channel) throw new Error('no channel');
+  return channel;
 }
 
 afterEach(async () => {
@@ -331,5 +376,123 @@ describe('IndexedDbDocStore across tabs', () => {
     await channels.pending();
     tabB.watch('page:a', (update) => Y.applyUpdate(loaded, update));
     expect(loaded.getText('t').toString()).toBe('base+more');
+  });
+
+  it('delivers a write to other tabs before it is durable', async () => {
+    const { tabA, tabB } = await twoTabs();
+    const seenByB: Uint8Array[] = [];
+    tabB.watch('page:a', (update) => seenByB.push(update));
+    const commits = slowCommits();
+    let durable = false;
+    const write = tabA.storeUpdate('page:a', textUpdate(new Y.Doc(), 'hi')).then(() => {
+      durable = true;
+    });
+    try {
+      await vi.waitFor(() => expect(seenByB).toHaveLength(1));
+      expect(durable).toBe(false);
+    } finally {
+      commits.release();
+    }
+    await write;
+    expect(await tabB.updateCount('page:a')).toBe(1);
+  });
+
+  it('stores a write that another tab announced but closed before storing', async () => {
+    const factory = new IDBFactory();
+    const channels = createChannelHub();
+    const tabB = await openStore(factory, { channel: channels, adoptAfterMs: 20 });
+    const seen: Uint8Array[] = [];
+    tabB.watch('page:a', (update) => seen.push(update));
+    otherTab(channels).postMessage({
+      v: 1,
+      type: 'updates',
+      source: 'closed-tab',
+      seq: 1,
+      items: [{ doc: 'page:a', update: textUpdate(new Y.Doc(), 'last words') }],
+    });
+    await channels.pending();
+    expect(seen).toHaveLength(1);
+    await vi.waitFor(async () => expect(await tabB.updateCount('page:a')).toBe(1));
+    const reopened = await openStore(factory);
+    expect(
+      docFrom(await reopened.load('page:a'))
+        .getText('t')
+        .toString(),
+    ).toBe('last words');
+  });
+
+  it('stores the writes its own edits build on while their tab has not', async () => {
+    const factory = new IDBFactory();
+    const channels = createChannelHub();
+    const tabB = await openStore(factory, { channel: channels, adoptAfterMs: 60_000 });
+    const source = new Y.Doc();
+    otherTab(channels).postMessage({
+      v: 1,
+      type: 'updates',
+      source: 'closed-tab',
+      seq: 1,
+      items: [{ doc: 'page:a', update: textUpdate(source, 'Hello') }],
+    });
+    await channels.pending();
+    // Tab B's edit only makes sense after the one it saw.
+    await tabB.storeUpdate('page:a', textUpdate(source, ' world', 5));
+    const reopened = await openStore(factory);
+    expect(
+      docFrom(await reopened.load('page:a'))
+        .getText('t')
+        .toString(),
+    ).toBe('Hello world');
+  });
+
+  it('never stores a write twice once the tab that wrote it confirms it', async () => {
+    const factory = new IDBFactory();
+    const channels = createChannelHub();
+    const tabA = await openStore(factory, { channel: channels });
+    const tabB = await openStore(factory, { channel: channels, adoptAfterMs: 300 });
+    tabB.watch('page:a', () => undefined);
+    const source = new Y.Doc();
+    await tabA.storeUpdate('page:a', textUpdate(source, 'once'));
+    await channels.pending();
+    // Tab B edits the same doc once the write is confirmed, and waits past its patience.
+    await tabB.storeUpdate('page:a', textUpdate(source, '!', 4));
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    await tabB.flush();
+    expect(await tabA.updateCount('page:a')).toBe(2);
+  });
+
+  it('loads the writes another tab announced and has not stored yet', async () => {
+    const factory = new IDBFactory();
+    const channels = createChannelHub();
+    const tabB = await openStore(factory, { channel: channels, adoptAfterMs: 60_000 });
+    otherTab(channels).postMessage({
+      v: 1,
+      type: 'updates',
+      source: 'busy-tab',
+      seq: 1,
+      items: [{ doc: 'page:a', update: textUpdate(new Y.Doc(), 'in flight') }],
+    });
+    await channels.pending();
+    // Nothing watched the doc when the write arrived, and the store doesn't have it yet.
+    const loaded = docFrom(await tabB.load('page:a'));
+    tabB.watch('page:a', (update) => Y.applyUpdate(loaded, update));
+    expect(loaded.getText('t').toString()).toBe('in flight');
+  });
+
+  it('applies writes from tabs of earlier versions, which announce them once durable', async () => {
+    const factory = new IDBFactory();
+    const channels = createChannelHub();
+    const tabB = await openStore(factory, { channel: channels, adoptAfterMs: 10 });
+    const seen: Uint8Array[] = [];
+    tabB.watch('page:a', (update) => seen.push(update));
+    otherTab(channels).postMessage({
+      v: 1,
+      type: 'updates',
+      source: 'older-tab',
+      items: [{ doc: 'page:a', update: textUpdate(new Y.Doc(), 'stored') }],
+    });
+    await channels.pending();
+    expect(seen).toHaveLength(1);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(await tabB.updateCount('page:a')).toBe(0);
   });
 });
