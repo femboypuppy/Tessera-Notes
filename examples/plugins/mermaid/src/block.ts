@@ -1,5 +1,5 @@
 import type { BlockContext, ThemeInfo } from '@tessera/plugin-api';
-import { renderDiagram, type RenderResult } from './render';
+import type { DiagramInput, RenderResult } from './render';
 import { TEMPLATES } from './templates';
 
 /** The data a Mermaid block stores in the page. */
@@ -75,11 +75,24 @@ export async function renderBlock(ctx: BlockContext<DiagramData>): Promise<() =>
     ctx.setData({ code: next }).catch((error: unknown) => console.error(error));
   };
 
+  /**
+   * Draws `source` with the plugin's renderer (`renderer.ts`, where Mermaid lives: one frame
+   * draws for every block, so blocks don't each load it).
+   */
+  const render = async (source: string, target: HTMLElement): Promise<RenderResult> => {
+    const input: DiagramInput = { code: source, theme, width: target.clientWidth };
+    try {
+      return await ctx.api.ui.render<RenderResult>('diagram', input);
+    } catch (failure) {
+      return { error: failure instanceof Error ? failure.message : String(failure) };
+    }
+  };
+
   /** Renders `source` into `target`, keeping the last good diagram (dimmed) on errors. */
   const draw = async (target: HTMLElement, source: string, error: HTMLElement | null) => {
     const run = (renderRun += 1);
     const result: RenderResult = source.trim()
-      ? await renderDiagram(source, theme, doc)
+      ? await render(source, target)
       : { error: 'Write a diagram, or pick a template.' };
     if (run !== renderRun) return;
     if ('svg' in result) {

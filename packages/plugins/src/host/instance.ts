@@ -13,7 +13,7 @@ import {
   type SidePanelProps,
   type SlashMenuItem,
 } from '@tessera/core';
-import type { PageChangeEvent, PluginSurface, ThemeInfo } from '@tessera/plugin-api';
+import type { PageChangeEvent, ThemeInfo } from '@tessera/plugin-api';
 import { resolveSettingsValues, type SettingPrimitive } from '@tessera/plugin-api/settings';
 import type { ComponentType } from 'react';
 import {
@@ -35,6 +35,7 @@ import {
   unresponsiveSchema,
   workerReadySchema,
   type ApiParams,
+  type ConnectionSurface,
   type NotifyMethod,
 } from '../rpc/protocol';
 import type { Sandbox, SandboxFactory } from '../sandbox/frames';
@@ -55,6 +56,10 @@ export interface InstanceDeps {
   sandboxes: SandboxFactory;
   /** Holds the hidden logic frames. */
   container: HTMLElement;
+  /** Holds the renderer frames: out of sight, but laid out (render functions measure text). */
+  rendererContainer: HTMLElement;
+  /** How long an unused renderer frame stays open (default `PLUGIN_TIMINGS.rendererIdleMs`). */
+  rendererIdleMs?: number;
   theme(): ThemeInfo;
   fonts(): Promise<UiFont[]>;
   /** The side-panel component for one plugin panel (React lives outside the instance). */
@@ -101,9 +106,19 @@ export interface SurfaceCallbacks extends SurfaceApi {
 }
 
 interface Connection {
-  surface: PluginSurface;
+  surface: ConnectionSurface;
   endpoint: HostEndpoint;
   topics: Set<'pages' | 'storage'>;
+}
+
+/** The plugin's shared renderer frame (`manifest.renderer`), while it's open. */
+interface RendererFrame {
+  sandbox: Sandbox;
+  connection: Connection;
+  /** Render calls in flight. */
+  calls: number;
+  idle: ReturnType<typeof setTimeout> | null;
+  heartbeat: ReturnType<typeof setTimeout> | null;
 }
 
 const errorMessage = (error: unknown) => (error instanceof Error ? error.message : String(error));
@@ -129,6 +144,8 @@ export class PluginInstance {
   /** The frames of the open panels and blocks. */
   private readonly uiSandboxes = new Set<Sandbox>();
   private heartbeat: ReturnType<typeof setTimeout> | null = null;
+  private renderer: RendererFrame | null = null;
+  private rendererStart: Promise<RendererFrame> | null = null;
   private notifications: number[] = [];
   private readonly deniedToasts = new Set<string>();
   private lastSettings: Record<string, SettingPrimitive> = {};
@@ -317,10 +334,15 @@ export class PluginInstance {
     if (!current()) return;
     this.setStatus('running');
     this.log('info', `${plugin.manifest.name} ${plugin.manifest.version} started.`);
-    // Panel and block code is instrumented before it runs, once per version: start now, so the
-    // first one opens without waiting (large plugins take seconds).
+    // Panel, block and renderer code is instrumented before it runs, once per version: start now,
+    // so the first one opens without waiting (large plugins take seconds).
     if (this.declared.panels.length || this.declared.blocks.length)
       this.deps.sandboxes.prepareUi?.(code.code, { slot: plugin.id, hash: plugin.hash });
+    if (code.renderer !== undefined)
+      this.deps.sandboxes.prepareUi?.(code.renderer, {
+        slot: `${plugin.id}/renderer`,
+        hash: plugin.hash,
+      });
   }
 
   private startHeartbeat(generation: number): void {
@@ -401,6 +423,8 @@ export class PluginInstance {
   private teardown(): void {
     if (this.heartbeat) clearTimeout(this.heartbeat);
     this.heartbeat = null;
+    if (this.renderer) this.closeRenderer(this.renderer);
+    this.rendererStart = null;
     for (const off of this.commands.values()) off();
     this.commands.clear();
     for (const { off } of this.panels.values()) off();
@@ -422,7 +446,7 @@ export class PluginInstance {
 
   private connect(
     port: RpcPort,
-    surface: PluginSurface,
+    surface: ConnectionSurface,
     surfaceApi: SurfaceApi,
     onNotify: (method: Exclude<NotifyMethod, 'log'>, params: unknown) => void,
   ): Connection {
@@ -449,6 +473,7 @@ export class PluginInstance {
       },
       surface: surfaceApi,
       allowNotification: () => this.allowNotification(),
+      render: (name, input) => this.render(name, input),
     });
     const endpoint = new HostEndpoint({
       port,
@@ -707,6 +732,176 @@ export class PluginInstance {
     const value = await this.deps.manager.storageGet(this.id, key);
     for (const connection of listening)
       connection.endpoint.emit('storage.changed', value === undefined ? { key } : { key, value });
+  }
+
+  // -------------------------------------------------------------------------------------------
+  // The renderer
+  // -------------------------------------------------------------------------------------------
+
+  /**
+   * Runs one of the plugin's render functions (`api.ui.render`) in its renderer frame: one hidden
+   * frame per plugin, opened on the first call and shared by all its panels and blocks, so a
+   * heavy library loads once. It closes when unused for a while, and opens again when needed.
+   */
+  async render(name: string, input: JsonValue): Promise<unknown> {
+    const plugin = this.plugin();
+    if (!plugin.manifest.renderer)
+      throw new PluginCallError(
+        'not_found',
+        t('errNoRendererModule', { plugin: plugin.manifest.name }),
+      );
+    const frame = await this.openRenderer();
+    frame.calls += 1;
+    this.idleRenderer(frame);
+    try {
+      return await frame.connection.endpoint.request(
+        'render',
+        { name, input },
+        PLUGIN_TIMINGS.renderTimeoutMs,
+      );
+    } finally {
+      frame.calls -= 1;
+      this.idleRenderer(frame);
+    }
+  }
+
+  private openRenderer(): Promise<RendererFrame> {
+    if (this.renderer) return Promise.resolve(this.renderer);
+    this.rendererStart ??= this.startRenderer().finally(() => {
+      this.rendererStart = null;
+    });
+    return this.rendererStart;
+  }
+
+  private async startRenderer(): Promise<RendererFrame> {
+    const generation = this.generation;
+    const plugin = this.plugin();
+    const name = plugin.manifest.name;
+    const stopped = () => new PluginCallError('unavailable', t('errStopped'));
+    const [code, fonts] = await Promise.all([
+      this.deps.manager.getCode(this.id),
+      this.deps.fonts(),
+    ]);
+    if (generation !== this.generation) throw stopped();
+    if (code?.renderer === undefined)
+      throw new PluginCallError('not_found', t('errNoRendererModule', { plugin: name }));
+    let resolveReady: () => void = () => undefined;
+    let rejectReady: (error: Error) => void = () => undefined;
+    const ready = new Promise<void>((resolve, reject) => {
+      resolveReady = resolve;
+      rejectReady = reject;
+    });
+    const sandbox = await this.deps.sandboxes.createUi({
+      container: this.deps.rendererContainer,
+      kind: 'renderer',
+      title: t('rendererFrameTitle', { plugin: name }),
+      code: code.renderer,
+      cacheKey: { slot: `${plugin.id}/renderer`, hash: plugin.hash },
+      network: networkSources(plugin.granted),
+      init: { ...this.runtimeInit(), surface: { kind: 'renderer' }, fonts },
+      onControl: (message) => {
+        if (message.type === 'navigation') {
+          this.log('error', 'The renderer tried to navigate away; navigation is blocked.', {
+            surface: 'renderer',
+          });
+          this.crash(t('errNavigation', { plugin: name }));
+        } else if (message.type === 'boot-error') rejectReady(new Error(message.message));
+      },
+    });
+    if (generation !== this.generation) {
+      sandbox.destroy();
+      throw stopped();
+    }
+    let frame: RendererFrame | null = null;
+    const connection = this.connect(sandbox.port, 'renderer', {}, (method, params) => {
+      if (method === 'rendered') resolveReady();
+      else if (method === 'error') {
+        const parsed = errorSchema.safeParse(params);
+        if (!parsed.success) return;
+        this.log('error', parsed.data.stack ?? parsed.data.message, {
+          surface: 'renderer',
+          source: 'plugin',
+        });
+        if (parsed.data.fatal) rejectReady(new Error(parsed.data.message));
+      } else if (method === 'unresponsive') {
+        // Its guard stopped code that ran too long without a break (`instrument.ts`).
+        const parsed = unresponsiveSchema.safeParse(params);
+        const seconds = parsed.success ? ` for ${(parsed.data.ms / 1000).toFixed(1)} s` : '';
+        rejectReady(new Error(t('errRendererUnresponsive', { plugin: name })));
+        if (frame) this.closeRenderer(frame, `ran without a break${seconds}`);
+      }
+    });
+    frame = { sandbox, connection, calls: 0, idle: null, heartbeat: null };
+    const timer = setTimeout(
+      () => rejectReady(new Error(t('errStartTimeout', { plugin: name }))),
+      PLUGIN_TIMINGS.startTimeoutMs,
+    );
+    try {
+      await ready;
+    } catch (error) {
+      this.closeRenderer(frame);
+      this.log('error', `The renderer couldn't start: ${errorMessage(error)}`, {
+        surface: 'renderer',
+      });
+      throw new PluginCallError('unavailable', errorMessage(error));
+    } finally {
+      clearTimeout(timer);
+    }
+    if (generation !== this.generation) {
+      this.closeRenderer(frame);
+      throw stopped();
+    }
+    this.renderer = frame;
+    this.beatRenderer(frame);
+    return frame;
+  }
+
+  /** Pings the renderer like a panel: one that stops answering is closed. */
+  private beatRenderer(frame: RendererFrame): void {
+    const beat = async () => {
+      if (this.renderer !== frame) return;
+      try {
+        await frame.connection.endpoint.request(
+          'ping',
+          undefined,
+          PLUGIN_TIMINGS.heartbeatTimeoutMs,
+        );
+      } catch {
+        if (this.renderer === frame) this.closeRenderer(frame, 'stopped responding');
+        return;
+      }
+      this.beatRenderer(frame);
+    };
+    frame.heartbeat = setTimeout(() => void beat(), PLUGIN_TIMINGS.heartbeatIntervalMs * 2);
+  }
+
+  /** Closes the renderer once nothing has called it for a while. */
+  private idleRenderer(frame: RendererFrame): void {
+    if (frame.idle) clearTimeout(frame.idle);
+    frame.idle = null;
+    if (frame.calls > 0 || this.renderer !== frame) return;
+    frame.idle = setTimeout(() => {
+      if (this.renderer === frame && frame.calls === 0) this.closeRenderer(frame);
+    }, this.deps.rendererIdleMs ?? PLUGIN_TIMINGS.rendererIdleMs);
+  }
+
+  /**
+   * Removes the renderer frame. With `why` (it misbehaved), says so in the console, and calls in
+   * flight fail with a message saying the renderer stopped responding.
+   */
+  private closeRenderer(frame: RendererFrame, why?: string): void {
+    if (frame.idle) clearTimeout(frame.idle);
+    if (frame.heartbeat) clearTimeout(frame.heartbeat);
+    if (this.renderer === frame) this.renderer = null;
+    const name = this.deps.manager.get(this.id)?.manifest.name ?? this.id;
+    if (why) this.log('error', `The renderer ${why} and was closed.`, { surface: 'renderer' });
+    frame.connection.endpoint.dispose(
+      why
+        ? new PluginCallError('unavailable', t('errRendererUnresponsive', { plugin: name }))
+        : undefined,
+    );
+    this.connections.delete(frame.connection);
+    frame.sandbox.destroy();
   }
 
   // -------------------------------------------------------------------------------------------

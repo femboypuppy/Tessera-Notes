@@ -940,8 +940,11 @@ Staying in budget:
 - **Plugins** run in sandboxed iframes (`sandbox="allow-scripts"` without `allow-same-origin`) with
   a strict CSP, talk only through a validated postMessage RPC, and get capability-scoped APIs
   checked against their granted permissions on every call. Crashes and timeouts are contained.
-  Panel and block frames may share the app's thread, so their code is instrumented before it
-  runs and stopped after 2 s without a break, and no other script can load in them.
+  Panel, block and renderer frames may share the app's thread, so their code is instrumented
+  before it runs and stopped after 2 s without a break, and no other script can load in them.
+  A plugin's heavy drawing code goes in its renderer (manifest `renderer`, plugin API 2): one
+  hidden frame per plugin, without API access, that its panels and blocks call with
+  `api.ui.render`, so a library like Mermaid loads once rather than in every block.
   The frames are `srcdoc` documents, so the app's own policy applies to them too: the server
   sends `script-src 'self' 'nonce-…' blob:` with a fresh nonce per `index.html` response and
   writes it into `<meta property="csp-nonce">` (the desktop app fills the same token with Tauri's
@@ -1031,3 +1034,6 @@ branch builds on its own.
   the `credentialStore` service, `AssetStore.retainUrl`, `SyncStatusInfo.readOnly` (read-only
   viewers), `SearchHit.heading`/`blockId`, `Backlink.blockId`, the `workspaceMenuItems`
   contribution, and replaceable registrations for core's stub importer and exporter.
+- Plugin API 2: `pluginManifestSchema` gained `renderer` (a second module, loaded once per
+  plugin in a hidden frame), and `PLUGIN_API_VERSION` is 2, so Tessera 0.1 refuses plugins that
+  need a renderer instead of running them without one.

@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { readFileSync, statSync } from 'node:fs';
 import { expect, test } from '@playwright/test';
 import { createPage, createWorkspace, pageTree } from '../architect/helpers';
 import {
@@ -75,6 +75,47 @@ test('install the Mermaid block, insert it from the slash menu and see it render
   await expect(block.getByRole('textbox', { name: 'Diagram source (Mermaid)' })).toBeFocused();
   await page.keyboard.press('Escape');
   await expect(block.getByRole('button', { name: 'Edit diagram' })).toBeAttached();
+});
+
+test('Mermaid blocks share one renderer, so each block stays light', async ({ page }) => {
+  // The blocks' module leaves Mermaid to the renderer, which loads once (issue #14).
+  expect(statSync(`${exampleDist('mermaid')}/main.js`).size).toBeLessThan(100_000);
+  expect(statSync(`${exampleDist('mermaid')}/renderer.js`).size).toBeGreaterThan(1_000_000);
+  await createWorkspace(page, 'Diagrams');
+  await openPluginSettings(page);
+  await installFromRegistry(page, 'Mermaid diagrams');
+  await expect(page.getByText('Running', { exact: true })).toBeVisible({ timeout: 30_000 });
+
+  await createPage(page, 'Architecture');
+  await page.getByRole('textbox', { name: 'Page title' }).press('Enter');
+  const frames = 'iframe[data-plugin-frame="ui"][title^="Mermaid diagram (Mermaid diagrams)"]';
+  for (let count = 1; count <= 3; count += 1) {
+    // Below the last block, the editor adds a line to type in.
+    if (count > 1) await page.locator('.tess-editor-tail').click();
+    await page.keyboard.type('/mermaid');
+    await expect(page.getByRole('option', { name: /Mermaid diagram/ })).toBeVisible();
+    await page.keyboard.press('Enter');
+    await expect(page.locator(frames)).toHaveCount(count);
+  }
+  for (let index = 0; index < 3; index += 1)
+    await expect(
+      page.frameLocator(frames).nth(index).frameLocator('iframe').locator('svg').first(),
+    ).toBeVisible({ timeout: 30_000 });
+  // One hidden, sandboxed renderer drew all three.
+  const renderer = page.locator('iframe[data-plugin-frame="renderer"]');
+  await expect(renderer).toHaveCount(1);
+  await expect(renderer).toHaveAttribute('sandbox', 'allow-scripts');
+  await expect(renderer).toHaveAttribute('aria-hidden', 'true');
+  await expect(renderer).toHaveAttribute('title', 'Mermaid diagrams renderer');
+  const csp = await renderer.evaluate(
+    (frame) =>
+      /http-equiv="Content-Security-Policy" content="([^"]*)"/.exec(
+        (frame as HTMLIFrameElement).srcdoc,
+      )?.[1] ?? '',
+  );
+  expect(csp).toContain("default-src 'none'");
+  expect(csp).toContain("connect-src 'none'");
+  expect(csp).toContain("frame-src 'none'");
 });
 
 test('revoke a permission and see a friendly error', async ({ page }) => {

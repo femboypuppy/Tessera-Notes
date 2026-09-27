@@ -38,6 +38,9 @@ export interface RuntimeInit {
 /** A module export the runtime accepts as a plugin. */
 export type RuntimeDefinition = PluginDefinition<SettingsSchema>;
 
+/** A renderer module's functions (defineRenderer), by name. */
+export type RuntimeRenderers = Record<string, (input: JsonValue) => unknown>;
+
 /** Host requests the runtime answers. */
 export type RuntimeRequestHandler = (method: string, params: unknown) => unknown;
 
@@ -72,6 +75,8 @@ export interface RuntimeKit {
   }): { api: PluginApi; state: RuntimeState };
   /** Validates a module's default export. Throws a readable error. */
   readDefinition(module: unknown): RuntimeDefinition;
+  /** Validates a renderer module's default export and returns its functions by name. */
+  readRenderer(module: unknown): RuntimeRenderers;
   /** Forwards console output and uncaught errors to the host. */
   captureConsole(
     target: Pick<Console, 'log' | 'info' | 'warn' | 'error' | 'debug'>,
@@ -315,6 +320,29 @@ export function createRuntimeKit(): RuntimeKit {
     return candidate as RuntimeDefinition;
   };
 
+  const readRenderer = (module: unknown): RuntimeRenderers => {
+    const candidate =
+      module && typeof module === 'object' && 'default' in module
+        ? (module as { default: unknown }).default
+        : undefined;
+    const renderers =
+      candidate && typeof candidate === 'object'
+        ? (candidate as { __tesseraRenderer?: unknown; renderers?: unknown })
+        : null;
+    const functions = renderers?.renderers;
+    if (
+      renderers?.__tesseraRenderer !== 1 ||
+      !functions ||
+      typeof functions !== 'object' ||
+      !Object.values(functions).every((item) => typeof item === 'function')
+    )
+      throw makeError(
+        'invalid',
+        "The renderer's code doesn't export a renderer. Its default export should be defineRenderer({ … }).",
+      );
+    return functions as RuntimeRenderers;
+  };
+
   const captureConsole: RuntimeKit['captureConsole'] = (target, rpc) => {
     for (const level of ['log', 'info', 'warn', 'error', 'debug'] as const) {
       const original = target[level].bind(target);
@@ -522,6 +550,8 @@ export function createRuntimeKit(): RuntimeKit {
             typeof options === 'string' ? { title: options } : { ...options },
           );
         },
+        render: async (name, input) =>
+          (await rpc.call('ui.render', input === undefined ? { name } : { name, input })) as never,
       },
       pages: {
         list: async (options) =>
@@ -642,6 +672,7 @@ export function createRuntimeKit(): RuntimeKit {
     createRpc,
     createApi,
     readDefinition,
+    readRenderer,
     captureConsole,
     captureErrors,
     format,

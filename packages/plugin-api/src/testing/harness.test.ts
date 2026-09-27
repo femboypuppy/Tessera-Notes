@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from 'vitest';
-import { defineBlock, definePlugin, PluginError } from '../index';
+import { defineBlock, definePlugin, defineRenderer, PluginError } from '../index';
 import { createTestHarness, docToMarkdown, markdownToDoc } from './index';
 
 const plugin = definePlugin({
@@ -201,6 +201,28 @@ describe('createTestHarness', () => {
       harness.api.databases.addRow('books', { values: { Pages: 'many' } }),
     ).rejects.toMatchObject({ code: 'invalid' });
     expect(harness.workspace.rows('books')).toHaveLength(3);
+  });
+
+  it('runs render functions with JSON in and out, from activate, panels and blocks', async () => {
+    const renderer = defineRenderer({
+      shout: (input: { text: string }) => ({
+        text: input.text.toUpperCase(),
+        at: new Date(0) as never,
+      }),
+    });
+    const harness = createTestHarness(plugin, { renderer });
+    await expect(harness.api.ui.render('shout', { text: 'hi' })).resolves.toEqual({
+      text: 'HI',
+      at: '1970-01-01T00:00:00.000Z',
+    });
+    await expect(harness.api.ui.render('whisper')).rejects.toThrow(
+      'The renderer has no function "whisper".',
+    );
+    const withoutRenderer = createTestHarness(plugin);
+    await expect(withoutRenderer.api.ui.render('shout', { text: 'hi' })).rejects.toMatchObject({
+      code: 'not_found',
+      message: 'Test plugin has no renderer: its manifest names none.',
+    });
   });
 
   it('converts simple markdown both ways', () => {

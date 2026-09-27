@@ -1,3 +1,4 @@
+import { PLUGIN_API_VERSION } from '@tessera/core';
 import { describe, expect, it } from 'vitest';
 import {
   bundleFromFiles,
@@ -30,13 +31,26 @@ describe('manifests', () => {
   });
 
   it('refuses plugins for a newer API or a newer Tessera', () => {
-    const newer = parsePluginManifest(manifest({ apiVersion: 2 }));
+    const next = PLUGIN_API_VERSION + 1;
+    const newer = parsePluginManifest(manifest({ apiVersion: next }));
     expect(newer.ok).toBe(false);
-    if (!newer.ok) expect(newer.error).toMatch(/plugin API 2/);
+    if (!newer.ok) expect(newer.error).toMatch(new RegExp(`plugin API ${next}`));
     const app = parsePluginManifest(manifest({ minAppVersion: '9.0.0' }));
     expect(app.ok).toBe(false);
     if (!app.ok) expect(app.error).toMatch(/needs Tessera 9\.0\.0/);
     expect(parsePluginManifest(manifest({ minAppVersion: '0.1.0' })).ok).toBe(true);
+  });
+
+  it('accepts a renderer only from plugins built for API 2 (Tessera 0.1 would ignore it)', () => {
+    const old = parsePluginManifest(manifest({ renderer: 'renderer.js' }));
+    expect(old).toEqual({
+      ok: false,
+      error:
+        'Word count has a renderer, which needs "apiVersion": 2 in its manifest (older Tessera versions can’t run it).',
+    });
+    expect(parsePluginManifest(manifest({ apiVersion: 2, renderer: 'renderer.js' }))).toMatchObject(
+      { ok: true, manifest: { renderer: 'renderer.js' } },
+    );
   });
 
   it('compares semantic versions, pre-releases first', () => {
@@ -127,6 +141,26 @@ describe('bundles', () => {
     ).toThrow(/No manifest\.json/);
   });
 
+  it('reads the renderer module the manifest names, and explains a missing one', () => {
+    const withRenderer = JSON.stringify(
+      manifest({ entry: 'dist/main.js', apiVersion: 2, renderer: 'dist/renderer.js' }),
+    );
+    const bundle = bundleFromZip(
+      zip({
+        'manifest.json': withRenderer,
+        'dist/main.js': 'main',
+        'dist/renderer.js': 'renderer',
+      }),
+    );
+    expect(bundle).toMatchObject({ code: 'main', renderer: 'renderer' });
+    expect(
+      bundleFromFiles(files({ 'manifest.json': manifestText, 'dist/main.js': 'x' })),
+    ).not.toHaveProperty('renderer');
+    expect(() =>
+      bundleFromFiles(files({ 'manifest.json': withRenderer, 'dist/main.js': 'main' })),
+    ).toThrow(/dist\/renderer\.js\) is missing/);
+  });
+
   it('reads zips, including a BOM before the manifest', () => {
     const bytes = zip({ 'manifest.json': `\uFEFF${manifestText}`, 'dist/main.js': 'code' });
     expect(bundleFromZip(bytes).code).toBe('code');
@@ -161,6 +195,17 @@ describe('bundles', () => {
     });
     const fromFolder = await bundleFromUrl('https://dev.example/', { fetch: fetchFolder });
     expect(fromFolder).toMatchObject({ code: 'from folder', readme: 'Read me' });
+    const withRenderer = fakeFetch({
+      'https://dev.example/manifest.json': JSON.stringify(
+        manifest({ entry: 'main.js', apiVersion: 2, renderer: 'renderer.js' }),
+      ),
+      'https://dev.example/main.js': 'main',
+      'https://dev.example/renderer.js': 'renderer',
+    });
+    expect(await bundleFromUrl('https://dev.example/', { fetch: withRenderer })).toMatchObject({
+      code: 'main',
+      renderer: 'renderer',
+    });
   });
 
   it('explains failed downloads and non-plugins', async () => {
@@ -189,5 +234,11 @@ describe('bundles', () => {
     expect(a).toMatch(/^[0-9a-f]{64}$/);
     expect(await hashBundle({ manifest: manifest(), code: 'a' })).toBe(a);
     expect(await hashBundle({ manifest: manifest(), code: 'b' })).not.toBe(a);
+    // The renderer counts too (dev mode reloads when only it changed).
+    const withRenderer = await hashBundle({ manifest: manifest(), code: 'a', renderer: 'r' });
+    expect(withRenderer).not.toBe(a);
+    expect(await hashBundle({ manifest: manifest(), code: 'a', renderer: 's' })).not.toBe(
+      withRenderer,
+    );
   });
 });
