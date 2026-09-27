@@ -703,6 +703,88 @@ describe('plugin API through the sandbox runtime', () => {
     controller?.destroy();
   });
 
+  it('closes a panel whose code ran too long without a break, and says so in its place', async () => {
+    const s = await setup();
+    await s.install(
+      definePlugin({
+        activate(api) {
+          api.ui.addPanel({ id: 'info', title: 'Info' });
+        },
+        panels: { info: () => undefined },
+      }),
+      { permissions: ['ui:panels'] },
+    );
+    await s.running();
+    const instance = s.host.instance('word-count');
+    await vi.waitFor(() => expect(instance?.registeredPanels).toHaveLength(1));
+    const onReady = vi.fn();
+    const onError = vi.fn();
+    instance?.mountSurface({
+      container: document.createElement('div'),
+      title: 'Info',
+      surface: { kind: 'panel', id: 'info', pageId: null },
+      callbacks: { onReady, onError },
+    });
+    await vi.waitFor(() => expect(onReady).toHaveBeenCalled());
+    const frame = s.sandboxes.sandboxes.find((sandbox) => sandbox.kind === 'ui');
+    // What the frame's guard sends when it stops the plugin's code (sandbox/instrument.ts).
+    frame?.send({ v: 1, type: 'notify', method: 'unresponsive', params: { ms: 2_140 } });
+    await vi.waitFor(() =>
+      expect(onError).toHaveBeenCalledWith('Word count stopped responding and was stopped.'),
+    );
+    expect(frame?.destroyed).toBe(true);
+    expect(s.consoles.entries('word-count').at(-1)?.message).toBe(
+      'A panel ran without a break for 2.1 s and was closed.',
+    );
+    // Only the panel closed: the plugin keeps running.
+    expect(instance?.status).toBe('running');
+  });
+
+  it('gets panel and block code ready as the plugin starts, and forgets it on uninstall', async () => {
+    const s = await setup();
+    const prepareUi = vi.fn();
+    const forget = vi.fn();
+    Object.assign(s.sandboxes, { prepareUi, forget });
+    const createUi = vi.spyOn(s.sandboxes, 'createUi');
+    await s.install(definePlugin({ activate: () => undefined }));
+    await s.running();
+    // Nothing to show, nothing to prepare.
+    expect(prepareUi).not.toHaveBeenCalled();
+    await s.install(
+      definePlugin({
+        activate(api) {
+          api.ui.addBlock({ type: 'counter', title: 'Counter' });
+        },
+        blocks: { counter: () => undefined },
+      }),
+      { version: '1.1.0', permissions: ['ui:blocks'] },
+    );
+    await vi.waitFor(() => expect(prepareUi).toHaveBeenCalledOnce());
+    const plugin = s.manager.get('word-count');
+    const key = { slot: 'word-count', hash: plugin?.hash };
+    expect(prepareUi).toHaveBeenCalledWith(s.sandboxes.sandboxes.at(-1)?.code, key);
+    await vi.waitFor(() => expect(s.host.instance('word-count')?.hasBlock('counter')).toBe(true));
+    const onReady = vi.fn();
+    s.host.instance('word-count')?.mountSurface({
+      container: document.createElement('div'),
+      title: 'Counter',
+      surface: {
+        kind: 'block',
+        type: 'counter',
+        pageId: 'p',
+        blockId: 'b',
+        data: null,
+        readOnly: false,
+        selected: false,
+      },
+      callbacks: { onReady, onError: vi.fn() },
+    });
+    await vi.waitFor(() => expect(onReady).toHaveBeenCalled());
+    expect(createUi).toHaveBeenCalledWith(expect.objectContaining({ cacheKey: key }));
+    await s.manager.uninstall('word-count');
+    await vi.waitFor(() => expect(forget).toHaveBeenCalledWith('word-count'));
+  });
+
   it('records the declared settings, validates changes and pushes them to the plugin', async () => {
     const { s, api } = await withApi();
     await vi.waitFor(() => expect(s.manager.get('word-count')?.settingsSchema).toBeDefined());

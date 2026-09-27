@@ -225,6 +225,7 @@ export const en = {
   errNotPlugin:
     'That address didn’t return a plugin. Use a link to a plugin’s manifest.json or its .zip file.',
   errUnresponsive: '{plugin} stopped responding and was stopped.',
+  errUnreadableCode: 'Tessera couldn’t read the plugin’s code: {message}',
   errStartTimeout: '{plugin} took too long to start.',
   errCrashed: '{plugin} crashed: {message}',
   errNotDefinition:

@@ -2,7 +2,7 @@ import vm from 'node:vm';
 import { describe, expect, it, vi } from 'vitest';
 import { uiInnerBootstrap, uiOuterBootstrap, workerFrameBootstrap } from './bootstraps';
 import { createRuntimeKit, type RuntimeInit, type RuntimeKit } from './runtime-kit';
-import { runUi, type UiEnv } from './runtime-ui';
+import { LOCKED_SCRIPTS_CSP, runUi, type UiEnv } from './runtime-ui';
 import { runWorker } from './runtime-worker';
 import {
   appCspNonce,
@@ -171,6 +171,8 @@ describe('sandbox sources are self-contained', () => {
       console: { log() {}, info() {}, warn() {}, error() {}, debug() {} },
       ResizeObserver: globalThis.ResizeObserver,
       FontFace: class {} as unknown as typeof FontFace,
+      performance: globalThis.performance,
+      MessageChannel: globalThis.MessageChannel,
     };
     await run(env, kit);
     expect(doc.getElementById('root')?.textContent).toBe('Page page-1');
@@ -181,6 +183,142 @@ describe('sandbox sources are self-contained', () => {
     await vi.waitFor(() =>
       expect(received).toContainEqual(expect.objectContaining({ method: 'rendered' })),
     );
+    channel.port1.close();
+  });
+});
+
+describe('the guard of instrumented UI code', () => {
+  it('locks scripts on its first call, stops a run that takes too long, and stays stopped', () => {
+    const kit = evaluate<() => RuntimeKit>(createRuntimeKit.toString(), realm())();
+    const target = {};
+    let time = 0;
+    const turns: Array<() => void> = [];
+    const onFirstRun = vi.fn();
+    const onStall = vi.fn();
+    kit.installGuard({
+      target,
+      name: 'guard',
+      limitMs: 100,
+      now: () => time,
+      afterTask: (callback) => turns.push(callback),
+      onFirstRun,
+      onStall,
+    });
+    expect(Object.getOwnPropertyDescriptor(target, 'guard')).toMatchObject({
+      writable: false,
+      configurable: false,
+      enumerable: false,
+    });
+    const guard = (target as { guard: () => void }).guard;
+    guard();
+    expect(onFirstRun).toHaveBeenCalledOnce();
+    // 90 ms of work, then the event loop turns: a new run starts from zero.
+    for (let call = 0; call < 90; call += 1) {
+      time += 1;
+      guard();
+    }
+    turns.splice(0).forEach((turn) => turn());
+    guard();
+    for (let call = 0; call < 90; call += 1) {
+      time += 1;
+      guard();
+    }
+    expect(onStall).not.toHaveBeenCalled();
+    // This run goes on past 100 ms.
+    expect(() => {
+      for (let call = 0; call < 100; call += 1) {
+        time += 1;
+        guard();
+      }
+    }).toThrow('ran for more than 0.1 seconds without a break');
+    expect(onStall).toHaveBeenCalledOnce();
+    // Stopped for good: every later call throws, even after the event loop turns.
+    turns.splice(0).forEach((turn) => turn());
+    expect(() => guard()).toThrow('ran for more than 0.1 seconds');
+    expect(onStall).toHaveBeenCalledOnce();
+    expect(onFirstRun).toHaveBeenCalledOnce();
+  });
+
+  it('the UI runtime installs it before the plugin loads, locks scripts and reports a stall', async () => {
+    const context = realm();
+    const kit = evaluate<() => RuntimeKit>(createRuntimeKit.toString(), context)();
+    const run = evaluate<typeof runUi>(runUi.toString(), context);
+    // The lock is written into the runtime's source (it can't import the constant).
+    expect(runUi.toString()).toContain(LOCKED_SCRIPTS_CSP);
+    const channel = new MessageChannel();
+    const received = messages(channel.port1);
+    const doc = document.implementation.createHTMLDocument('frame');
+    const policies: string[] = [];
+    new MutationObserver((records) => {
+      for (const record of records)
+        for (const node of record.addedNodes)
+          if (node instanceof HTMLMetaElement && node.httpEquiv === 'Content-Security-Policy')
+            policies.push(node.content);
+    }).observe(doc.head, { childList: true });
+    const window = { addEventListener: () => undefined } as UiEnv['window'] & {
+      $$tg?: () => void;
+    };
+    /** Stands in for a MessageChannel, whose port would keep the test process alive. */
+    class Channel {
+      port1: { onmessage: (() => void) | null } = { onmessage: null };
+      port2 = { postMessage: () => setTimeout(() => this.port1.onmessage?.(), 0) };
+    }
+    const env: UiEnv = {
+      port: channel.port2,
+      code: '',
+      init: {
+        ...init,
+        surface: { kind: 'panel', id: 'side', pageId: null },
+        fonts: [],
+        guard: { name: '$$tg', limitMs: 50 },
+      },
+      importPlugin: async () => {
+        // Scripts load until the top of the instrumented module runs.
+        await Promise.resolve();
+        expect(policies).toEqual([]);
+        window.$$tg?.();
+        return {
+          default: {
+            __tesseraPlugin: 1,
+            panels: {
+              side() {
+                // An instrumented `for (;;) {}`.
+                for (;;) window.$$tg?.();
+              },
+            },
+          },
+        };
+      },
+      window,
+      document: doc,
+      console: { log() {}, info() {}, warn() {}, error() {}, debug() {} },
+      ResizeObserver: globalThis.ResizeObserver,
+      FontFace: class {} as unknown as typeof FontFace,
+      performance: globalThis.performance,
+      MessageChannel: Channel as unknown as typeof MessageChannel,
+    };
+    await run(env, kit);
+    // The policy was added once, and its element removed: plugin code finds nothing to read.
+    expect(policies).toEqual([LOCKED_SCRIPTS_CSP]);
+    expect(doc.head.querySelector('meta[http-equiv="Content-Security-Policy"]')).toBeNull();
+    await vi.waitFor(() =>
+      expect(received).toContainEqual(
+        expect.objectContaining({
+          method: 'unresponsive',
+          params: { ms: expect.any(Number) as number },
+        }),
+      ),
+    );
+    expect(received).toContainEqual(
+      expect.objectContaining({
+        method: 'error',
+        params: expect.objectContaining({
+          message: expect.stringMatching(/ran for more than 0.05 seconds/) as string,
+          fatal: true,
+        }) as unknown,
+      }),
+    );
+    expect(received.some((message) => message.method === 'rendered')).toBe(false);
     channel.port1.close();
   });
 });
