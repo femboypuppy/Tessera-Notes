@@ -1,6 +1,6 @@
 {
   "name": "@tessera/testkit",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": true,
   "description": "Tessera test tooling: a seeded workspace generator, runtime and React test helpers, Playwright fixtures, the seeded harness app, and the CI helpers behind scripts/.",
   "license": "MIT",

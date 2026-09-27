@@ -1,6 +1,6 @@
 {
   "name": "@tessera/sync",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": true,
   "description": "Tessera storage and sync: IndexedDB persistence, multi-tab sync, the Hocuspocus client, presence and version history.",
   "license": "MIT",

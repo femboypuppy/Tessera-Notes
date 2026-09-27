@@ -32,7 +32,7 @@ Your data is in the volume, so removing the container doesn't touch it.
 ```yaml
 services:
   tessera:
-    image: ghcr.io/femboypuppy/tessera:0.1.1
+    image: ghcr.io/femboypuppy/tessera:0.1.2
 ```
 
 ## Clients

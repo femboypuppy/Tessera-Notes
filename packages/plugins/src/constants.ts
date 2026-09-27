@@ -7,7 +7,7 @@ export const PLUGINS_FEATURE_ID = 'plugins';
 export const PLUGINS_SETTINGS_PANEL_ID = 'plugins';
 
 /** The Tessera version plugins compare `minAppVersion` against. */
-export const APP_VERSION = '0.1.1';
+export const APP_VERSION = '0.1.2';
 
 /**
  * Where the default registry is published: the `plugins/` folder of the docs site (GitHub Pages,

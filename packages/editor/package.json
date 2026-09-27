@@ -1,6 +1,6 @@
 {
   "name": "@tessera/editor",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": true,
   "description": "Tessera block editor: TipTap on Yjs, implementing the canonical document schema.",
   "license": "MIT",

@@ -4,6 +4,127 @@ Every release of Tessera, newest first. Each one opens with what matters to peop
 followed by every change, generated from the commit history
 ([Conventional Commits](https://www.conventionalcommits.org/)).
 
+## 0.1.2 (2026-09-27)
+
+**Tessera Notes 0.1.2 makes the plugin browser work, fixes the editor's rough edges when several
+people type at once, and makes large workspaces faster.** It also brings a new logo and the new
+name: the project is now **Tessera Notes**, at
+[github.com/femboypuppy/Tessera-Notes](https://github.com/femboypuppy/Tessera-Notes) (old links
+redirect). Your data and settings carry over unchanged. Upgrading is recommended.
+
+### Highlights
+
+- **The plugin browser works.** Settings → Plugins → Browse lists the example plugins and installs
+  them in one click. In 0.1.1 it pointed at a registry that was never published, so it only said
+  “Couldn’t load the plugin registry”. The registry is now published with the documentation site, and each plugin is installed
+  only if its download matches the registry's SHA-256 checksum.
+- **Writing together is reliable.**
+  - Undo and redo no longer knock the editor out of step with the shared document, and a
+    collaborator's keystroke right after your undo no longer lands where your caret used to be.
+  - Two people typing the same letter at the same spot keep their own words.
+  - Your caret stays where you're typing when someone else's edits arrive, even when they add or
+    move blocks at the same time.
+- **Faster with large workspaces.**
+  - A keystroke on a long page costs the same as on a short one; typing in Firefox no longer slows
+    down as a page grows.
+  - Creating, renaming or moving a page redraws only what shows that page, not the whole sidebar and
+    every open database. Imports stay smoother too.
+  - Another open tab shows your edit right away instead of waiting for it to be saved to disk.
+  - With **Keep a markdown copy** on, the desktop app rewrites only the pages that changed.
+- **Plugins can't freeze the app.** A plugin's panel or block that runs in an endless loop is
+  stopped after two seconds, and the app keeps working. The Mermaid plugin loads once and draws
+  every diagram block through a shared renderer: 9 KB per block instead of 5.2 MB. (Plugins can use
+  renderers too: plugin API version 2.)
+- **Search keeps up with renames.** Pages that link to a renamed page are found by its new title
+  right away, not after their next edit.
+- **A new logo**: a leaf made of four mosaic tiles, in the app, the desktop icons, the favicon and
+  the docs.
+
+Also fixed: a link that GitHub-flavored markdown finds in plain text (like `+@.a`) no longer gains
+another pair of angle brackets each time the page is saved.
+
+### Closed issues
+
+- [#1](https://github.com/femboypuppy/Tessera-Notes/issues/1) Firefox typing latency grows with page size (y-tiptap selection mapping)
+- [#2](https://github.com/femboypuppy/Tessera-Notes/issues/2) Undo or redo can desync ProseMirror and Yjs (`@tiptap/y-tiptap` 3.0.9)
+- [#4](https://github.com/femboypuppy/Tessera-Notes/issues/4) Two people typing the same character at the same spot at the same instant can swap those characters
+- [#6](https://github.com/femboypuppy/Tessera-Notes/issues/6) A loop in a plugin's panel or block freezes the app in Firefox and headless Chromium
+- [#9](https://github.com/femboypuppy/Tessera-Notes/issues/9) Search: linked titles in page text catch up only on the next edit
+- [#12](https://github.com/femboypuppy/Tessera-Notes/issues/12) Measure first-open indexing of a large workspace in the real app
+- [#13](https://github.com/femboypuppy/Tessera-Notes/issues/13) Every page change re-renders every `usePages()` subscriber
+- [#14](https://github.com/femboypuppy/Tessera-Notes/issues/14) The Mermaid plugin loads 5.2 MB per block frame
+- [#15](https://github.com/femboypuppy/Tessera-Notes/issues/15) Cross-tab sync waits for the durable IndexedDB commit
+- [#16](https://github.com/femboypuppy/Tessera-Notes/issues/16) Desktop: the markdown copy re-exports the whole workspace after edits
+- [#50](https://github.com/femboypuppy/Tessera-Notes/issues/50) CodeQL fails on every push: code scanning is not enabled
+- [#51](https://github.com/femboypuppy/Tessera-Notes/issues/51) Docs deploy fails: GitHub Pages is not enabled
+- [#52](https://github.com/femboypuppy/Tessera-Notes/issues/52) Desktop builds: the first run of `desktop.yml`
+- [#53](https://github.com/femboypuppy/Tessera-Notes/issues/53) Docker image: the first run of `docker.yml` (arm64 never built)
+- [#54](https://github.com/femboypuppy/Tessera-Notes/issues/54) Release workflow: the first tagged release
+
+### Upgrade
+
+- **Desktop:** download the file for your system below and install it over 0.1.1. (0.1.x releases
+  don't update themselves yet.)
+- **Docker:** `docker pull ghcr.io/femboypuppy/tessera:0.1.2`, then recreate the container with the
+  same volume; your data stays. The image keeps its name, and `latest` points to 0.1.2 too.
+- **In the browser:** once your server runs 0.1.2, reload Tessera.
+- **Plugins:** plugins made for 0.1.1 keep working. A plugin that declares plugin API version 2
+  (a renderer) needs 0.1.2.
+
+| System | File |
+| --- | --- |
+| macOS (Apple silicon) | `Tessera_0.1.2_aarch64.dmg` |
+| macOS (Intel) | `Tessera_0.1.2_x64.dmg` |
+| Windows | `Tessera_0.1.2_x64-setup.exe` or `Tessera_0.1.2_x64_en-US.msi` |
+| Linux | `Tessera_0.1.2_amd64.AppImage`, `.deb` or `.rpm` |
+
+`SHA256SUMS.txt` lists every file's checksum. The desktop apps aren't signed with a developer
+certificate yet, so the first launch asks for your permission: on macOS, choose **Open Anyway** in
+System Settings → Privacy & Security; on Windows, **More info** → **Run anyway**.
+
+### Features
+
+- **brand:** a leaf of four mosaic tiles replaces the T logo (#60) ([`f952233`](https://github.com/femboypuppy/Tessera-Notes/commit/f9522330d07504e18d6c45b30dd1b90a8c687fd1))
+- **plugins:** generate the default registry from the example plugins ([`ac7c63c`](https://github.com/femboypuppy/Tessera-Notes/commit/ac7c63ca6cc2d394bf7345b74e64bf05becd9602))
+- **plugins:** the default registry's plugins install only with a matching SHA-256 ([`6a2f4a2`](https://github.com/femboypuppy/Tessera-Notes/commit/6a2f4a2d90380ea7fbe1ec742e2aed8d2ba3ccef))
+
+### Bug fixes
+
+- **editor:** a caret after someone else's change lands where Yjs puts it, or back in its moved block (#69) ([`6ddc0a0`](https://github.com/femboypuppy/Tessera-Notes/commit/6ddc0a0ae9f401c5484d87851b0ccd0d0f1f3eb9))
+- **editor:** a character typed next to an identical one stays with its typist (#68) ([`a1564a0`](https://github.com/femboypuppy/Tessera-Notes/commit/a1564a03d9c6632d11cf054b744e3ab4f2fd530f))
+- **plugins:** load Mermaid once in a shared renderer, not in every block frame (#62) ([`93c2862`](https://github.com/femboypuppy/Tessera-Notes/commit/93c2862790e1b34e50a6c7bcc0aa153cc5297faf))
+- **search:** pages show a renamed link target's new title in search (#61) ([`a50c8e0`](https://github.com/femboypuppy/Tessera-Notes/commit/a50c8e0596fabb38ed1a2bcc203549e3776175b2))
+- **plugins:** stop a loop in a panel or block instead of freezing the app (#59) ([`2797fbc`](https://github.com/femboypuppy/Tessera-Notes/commit/2797fbc86a94788b8020758e380d5a748396a793))
+- **editor:** an undo step's saved caret no longer reaches the next change (#58) ([`22501cc`](https://github.com/femboypuppy/Tessera-Notes/commit/22501cc6399331805ebaa16672d545b110c73128))
+- **markdown:** a link GFM finds in looser text no longer gains brackets on every save ([`9106583`](https://github.com/femboypuppy/Tessera-Notes/commit/9106583631f6235196128e951427c44ac3c7184c))
+
+### Performance
+
+- **editor:** a keystroke on a long page no longer costs work in proportion to it (#64) ([`b6d89cb`](https://github.com/femboypuppy/Tessera-Notes/commit/b6d89cb8fee53a47b5241c5bac39768052090bbe))
+- **desktop:** the markdown copy writes only the pages that changed (#65) ([`0b26089`](https://github.com/femboypuppy/Tessera-Notes/commit/0b2608974ff86ff19000f158b54f36d3eefdf4e8))
+- **sync:** other tabs see an edit before its IndexedDB commit finishes (#63) ([`33dc11a`](https://github.com/femboypuppy/Tessera-Notes/commit/33dc11ab75f8b9a353bc8d75901fe8071a9be371))
+- re-render page consumers only when the pages they show change (#57) ([`f20237c`](https://github.com/femboypuppy/Tessera-Notes/commit/f20237c4f0c59edbb12aa949c40fa122e61a56b7))
+
+### Documentation
+
+- plugin screenshots load on the site, and the home page's title says Tessera Notes ([`4a76081`](https://github.com/femboypuppy/Tessera-Notes/commit/4a760819d6a4f26cbaee248dfd3c41da3ee17e27))
+- **claude:** day-to-day rules instead of the parallel-build ones ([`c4419ea`](https://github.com/femboypuppy/Tessera-Notes/commit/c4419eadf43d7735a5782fd9f6f35728d75a1635))
+
+<details>
+<summary><strong>Maintenance</strong> (7)</summary>
+
+- **bench:** measure the first open of 5,000 notes from IndexedDB (#67) ([`f11c721`](https://github.com/femboypuppy/Tessera-Notes/commit/f11c721c7f72efaed46059df6c6418b7b40757ef))
+- **docs:** publish the plugin registry with the site, and check it after each deploy ([`2b2f02b`](https://github.com/femboypuppy/Tessera-Notes/commit/2b2f02bbdc32ef0e4004b0429224fb8e5a92c7e6))
+- **plugins:** browse and install from the published registry, and refuse a tampered zip ([`c5ee436`](https://github.com/femboypuppy/Tessera-Notes/commit/c5ee43658da364b2aae65f297a981cf583717682))
+- **plugins:** load only the translator from `@tessera/ui` ([`a2219e3`](https://github.com/femboypuppy/Tessera-Notes/commit/a2219e3e57fe71d000401b77961ed9ddca2ff3f0))
+- the repository is femboypuppy/Tessera-Notes ([`1163bae`](https://github.com/femboypuppy/Tessera-Notes/commit/1163bae98182c77ee9ff9cbcae21e905e3b589a1))
+- **docker:** keep publishing `ghcr.io/<owner>/tessera` after the rename ([`dd0fd2c`](https://github.com/femboypuppy/Tessera-Notes/commit/dd0fd2c8c4fcf4a10e578cf42386db7da46811f4))
+- **search:** wait for the palette's lazy chunk under a full test run ([`660c9c6`](https://github.com/femboypuppy/Tessera-Notes/commit/660c9c636d15e93d91b44b7546c2f59110d56506))
+
+</details>
+
+**Full changelog:** https://github.com/femboypuppy/Tessera-Notes/compare/v0.1.1...v0.1.2
+
 ## 0.1.1 (2026-09-26)
 
 **Tessera 0.1.1 fixes the problems a code scan found in 0.1.0.** A few checks that read text

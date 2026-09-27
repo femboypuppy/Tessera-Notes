@@ -1,6 +1,6 @@
 {
   "name": "tessera-monorepo",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": true,
   "description": "Tessera: a local-first, self-hostable knowledge app with Notion-style blocks and databases, Obsidian-style links, real-time collaboration and plugins.",
   "license": "MIT",

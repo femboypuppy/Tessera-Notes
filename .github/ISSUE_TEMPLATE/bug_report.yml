@@ -49,8 +49,8 @@ body:
     id: version
     attributes:
       label: Tessera version
-      description: The release you use (for example 0.1.1), or the commit if you built it yourself.
-      placeholder: 0.1.1
+      description: The release you use (for example 0.1.2), or the commit if you built it yourself.
+      placeholder: 0.1.2
     validations:
       required: true
   - type: dropdown

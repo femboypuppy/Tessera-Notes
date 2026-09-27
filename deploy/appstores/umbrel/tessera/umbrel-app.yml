@@ -2,7 +2,7 @@ manifestVersion: 1
 id: tessera
 category: files
 name: Tessera
-version: '0.1.1'
+version: '0.1.2'
 tagline: Local-first notes, docs and databases
 icon: https://raw.githubusercontent.com/femboypuppy/Tessera-Notes/main/apps/desktop/src-tauri/icons/icon.png
 description: >-

@@ -1,6 +1,6 @@
 {
   "name": "@tessera/desktop",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": true,
   "description": "The Tessera desktop app (Tauri 2). Its TypeScript side exports the desktop services and UI that the web desktop feature registers.",
   "license": "MIT",

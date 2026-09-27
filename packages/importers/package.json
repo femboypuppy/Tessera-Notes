@@ -1,6 +1,6 @@
 {
   "name": "@tessera/importers",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": true,
   "description": "Tessera importers and exporters: Notion, Obsidian, markdown folders, zip archives and JSON backups.",
   "license": "MIT",

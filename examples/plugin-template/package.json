@@ -13,7 +13,7 @@
     "pack": "vite build && node scripts/pack.mjs"
   },
   "devDependencies": {
-    "@tessera/plugin-api": "^0.1.0",
+    "@tessera/plugin-api": "^0.2.0",
     "fflate": "0.8.3",
     "jsdom": "30.1.1",
     "typescript": "6.0.3",

@@ -1,6 +1,6 @@
 {
   "name": "@tessera/db-views",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": true,
   "description": "Tessera databases: the query engine and the table, board, calendar, gallery and list views.",
   "license": "MIT",

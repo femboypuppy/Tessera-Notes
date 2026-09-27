@@ -54,7 +54,7 @@ Or clone the repository and use it in place: `git clone https://github.com/fembo
 Edit `.env`:
 
 ```bash
-TESSERA_VERSION=0.1.1              # pin a release; see UPGRADING.md
+TESSERA_VERSION=0.1.2              # pin a release; see UPGRADING.md
 PUBLIC_URL=https://notes.example.com
 TESSERA_DOMAIN=notes.example.com
 TESSERA_BIND=127.0.0.1             # only Caddy is exposed

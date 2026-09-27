@@ -10,8 +10,8 @@ services:
       PROXY_AUTH_ADD: 'false'
 
   web:
-    # Pin to a release digest when submitting: ghcr.io/femboypuppy/tessera:0.1.1@sha256:…
-    image: ghcr.io/femboypuppy/tessera:0.1.1
+    # Pin to a release digest when submitting: ghcr.io/femboypuppy/tessera:0.1.2@sha256:…
+    image: ghcr.io/femboypuppy/tessera:0.1.2
     user: '1000:1000'
     restart: on-failure
     stop_grace_period: 30s

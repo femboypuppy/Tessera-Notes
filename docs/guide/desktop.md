@@ -53,6 +53,6 @@ from a calendar, a task manager or a script.
 ## Updates
 
 When a release includes signed update files, the app checks GitHub Releases for updates and asks
-before installing one. Releases without them (0.1.0 and 0.1.1) don't update themselves: download
+before installing one. Releases without them (0.1.0, 0.1.1 and 0.1.2) don't update themselves: download
 the new version from the [releases page](https://github.com/femboypuppy/Tessera-Notes/releases/latest)
 and install it over the old one. Your workspaces stay where they are.

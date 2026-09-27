@@ -1,6 +1,6 @@
 {
   "name": "@tessera/markdown",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": true,
   "description": "Tessera markdown engine: markdown and HTML to and from the canonical document schema.",
   "license": "MIT",

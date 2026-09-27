@@ -5,7 +5,7 @@ One service with a volume; Railway provides HTTPS on a `*.up.railway.app` domain
 ## Option A: the published image (quickest)
 
 1. **New project → Deploy a Docker Image**, image `ghcr.io/femboypuppy/tessera:latest` (pin a
-   release like `ghcr.io/femboypuppy/tessera:0.1.1` for production).
+   release like `ghcr.io/femboypuppy/tessera:0.1.2` for production).
 2. **Variables** (the service's Variables tab):
 
    | Variable | Value |

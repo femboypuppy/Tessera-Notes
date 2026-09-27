@@ -1,6 +1,6 @@
 [package]
 name = "tessera-desktop"
-version = "0.1.1"
+version = "0.1.2"
 description = "Tessera desktop app: a local-first knowledge app in a Tauri 2 window."
 authors = ["Tessera contributors"]
 license = "MIT"
