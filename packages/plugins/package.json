@@ -26,6 +26,7 @@
     "@tessera/core": "workspace:*",
     "@tessera/plugin-api": "workspace:*",
     "@tessera/ui": "workspace:*",
+    "acorn": "8.18.0",
     "fflate": "0.8.3",
     "lucide-react": "1.47.0",
     "react-router": "8.4.0",

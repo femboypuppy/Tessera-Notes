@@ -69,6 +69,15 @@ the inner frame that does. The outer frame's `frame-src 'none'` blocks every nav
 inner frame. Without it, a plugin could navigate its own frame to a URL with your data in it,
 which a CSP alone can't prevent. If a plugin tries, Tessera stops it and says so in its console.
 
+Panels and blocks need the page's DOM, so their code can't run in a worker, and Firefox and
+Chromium without site isolation run their frames on the app's own thread. Nothing outside such a
+frame can interrupt it, so Tessera checks the code before it runs: it rewrites the plugin's
+module so that every function and every loop iteration first asks the frame whether the code has
+run too long without a break. The first check, at the top of the module, adds `script-src 'none'`
+to the frame's policy, so from then on no script can load at all: the only code that runs is the
+code Tessera checked. Tessera prepares each plugin version once, in the background, and keeps the
+result on this device.
+
 ## Every call goes through the host
 
 The only way out of the sandbox is a message channel to the host: the part of Tessera that owns
@@ -101,6 +110,10 @@ app's documents.
   four seconds the host stops it: its frames are removed, which ends its worker, and a
   notification says so, with a **Restart** button. The app stays responsive the whole time,
   because the loop runs in the worker's own thread.
+- **A panel or block stuck in a loop** (or in endless recursion, or in a promise chain that never
+  ends) is stopped by its frame after two seconds without a break. The app waits at most that
+  long, the panel or block says the plugin stopped responding and offers **Reload**, and the rest
+  of the plugin keeps running.
 - **Startup is time-limited**: a plugin has 20 seconds to load and 20 seconds for `activate`.
 - **Uninstalling** stops the plugin, removes everything it registered, and deletes its storage.
 
@@ -108,21 +121,20 @@ app's documents.
 
 The sandbox is strong, but it isn't magic. What it doesn't do:
 
-- **A loop in a panel or block frame can freeze the app in some browsers.** UI frames need the
-  DOM, so they can't run in a worker. Firefox, and Chromium without site isolation for sandboxed
-  frames (for example in headless mode), run them on the app's main thread. There, a panel or
-  block stuck in `while (true) {}` freezes the tab until the browser offers to stop the script.
-  Desktop Chromium runs sandboxed frames in their own process: the app stays responsive and the
-  host closes the frame when it stops answering. Plugin authors: do heavy work in `activate`,
-  which always runs in a worker, and keep panels and blocks light.
+- **A single long call into the browser can't be interrupted.** Tessera stops panel and block code
+  between its own steps, not inside the browser's functions. One call that runs for a long time,
+  such as a regular expression that backtracks for minutes, holds the app until it returns in
+  Firefox and in Chromium without site isolation for sandboxed frames (desktop Chromium runs them
+  in their own process). Plugin authors: do heavy work in `activate`, which always runs in a
+  worker, and keep panels and blocks light.
 - **A plugin draws whatever it wants inside its own panels and blocks**, including things that
   look like Tessera. It can't draw outside them, and it can't read or click anything outside
   them.
 - **Granted data is the plugin's to use.** A plugin with `pages:read` sees your pages, and with a
   `network:` permission it can send them to that domain. Permissions limit what a plugin can
   reach, not what it does with what it can reach.
-- **CPU and memory aren't capped** beyond the heartbeat. If a plugin slows Tessera down, turn it
-  off in Settings → Plugins.
+- **CPU and memory aren't capped** beyond the heartbeat and the two-second limit for panels and
+  blocks. If a plugin slows Tessera down, turn it off in Settings → Plugins.
 
 ## How this is tested
 
@@ -132,8 +144,10 @@ The sandbox is strong, but it isn't magic. What it doesn't do:
   plugin that stops answering.
 - Fuzz tests send the host malformed, oversized, deeply nested, cyclic and out-of-order messages.
 - End-to-end tests in `e2e/plugins` run in Chromium and Firefox. They check that plugin frames are
-  sandboxed, unreadable from the app and carry the CSP above, and that a plugin stuck in an
-  infinite loop is stopped while the app keeps working.
+  sandboxed, unreadable from the app and carry the CSP above, and that a plugin, a panel or a
+  block stuck in an infinite loop is stopped while the app keeps working. A hostile test plugin
+  probes the sandbox from inside, including loading code Tessera didn't check and switching the
+  check off.
 - Before any code was written, a spike in both browsers checked the design. A worker in a
   sandboxed frame can't open IndexedDB; the CSP blocks requests to other domains; a looping worker
   doesn't stop the app's timers. And plugin code that tries to leak data by navigating its frame

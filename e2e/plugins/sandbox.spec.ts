@@ -93,6 +93,66 @@ test('a plugin stuck in an infinite loop is stopped while the app stays responsi
   await expectCommand(page, 'plugins.spinner/spin');
 });
 
+// Firefox and headless Chromium run panel and block frames on the app's main thread, so nothing
+// outside a frame can interrupt its code: the host instruments that code, and the frame stops it
+// after two seconds without a break.
+test('a panel stuck in a loop is stopped, and the app keeps working', async ({ page }) => {
+  await serveFixtures(page);
+  await createWorkspace(page, 'Loops');
+  await createPage(page, 'Plans');
+  await openPluginSettings(page);
+  await installFromUrl(page, `${FIXTURE_BASE}looper/manifest.json`, 'Looper');
+  await expect(page.getByText('Running', { exact: true })).toBeVisible({ timeout: 20_000 });
+  await pageTree(page).getByRole('treeitem', { name: 'Plans' }).click();
+
+  await openPanel(page, 'Loops');
+  const panel = page.locator('[data-plugin-surface="panel"]');
+  await expect(panel.getByRole('alert')).toContainText(
+    'Looper stopped responding and was stopped.',
+    { timeout: 15_000 },
+  );
+  const started = Date.now();
+  await createPage(page, 'After the loop');
+  expect(Date.now() - started).toBeLessThan(5_000);
+
+  await openPluginSettings(page);
+  await page.getByRole('button', { name: 'Details for Looper' }).click();
+  // Only the panel was closed: the plugin runs on.
+  await expect(page.getByText('Running', { exact: true })).toBeVisible();
+  await page.getByRole('tab', { name: /Console/ }).click();
+  await expect(
+    page.getByRole('log').getByText(/A panel ran without a break for \d+\.\d s and was closed\./),
+  ).toBeVisible();
+});
+
+test('a block stuck in a promise loop is stopped, and can be reloaded', async ({ page }) => {
+  await serveFixtures(page);
+  await createWorkspace(page, 'Loops');
+  await openPluginSettings(page);
+  await installFromUrl(page, `${FIXTURE_BASE}looper/manifest.json`, 'Looper');
+  await expect(page.getByText('Running', { exact: true })).toBeVisible({ timeout: 20_000 });
+  await createPage(page, 'Spinning');
+  await page.getByRole('textbox', { name: 'Page title' }).press('Enter');
+  await page.keyboard.type('/loop');
+  await expect(page.getByRole('option', { name: /Loop block/ })).toBeVisible();
+  await page.keyboard.press('Enter');
+
+  const block = pluginFrame(page, 'Loop block (Looper)');
+  await block.getByRole('button', { name: 'Spin' }).click();
+  const surface = page.locator('[data-plugin-surface="block"]');
+  await expect(surface.getByRole('alert')).toContainText(
+    'Looper stopped responding and was stopped.',
+    { timeout: 15_000 },
+  );
+  // The page is usable again, and the block comes back.
+  const started = Date.now();
+  await page.getByRole('textbox', { name: 'Page title' }).fill('Spun');
+  await expect(pageTree(page).getByRole('treeitem', { name: 'Spun' })).toBeVisible();
+  expect(Date.now() - started).toBeLessThan(5_000);
+  await surface.getByRole('button', { name: 'Reload' }).click();
+  await expect(block.getByRole('button', { name: 'Spin' })).toBeVisible();
+});
+
 test('a malicious plugin reaches nothing outside its sandbox', async ({ page, context }) => {
   await expectNoEscape(page, context);
 });

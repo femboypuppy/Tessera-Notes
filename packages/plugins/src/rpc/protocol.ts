@@ -21,8 +21,8 @@ import { z } from 'zod';
  * sandbox runtime trusts the host.
  *
  * Plugin → host: `request` (an API call), `response` (to a host request), `notify` (fire and forget:
- * ready, log, resize, error). Host → plugin: `request` (ping, activate, deactivate, command.run),
- * `response`, `event` (pages, storage, settings, theme, surface state).
+ * ready, log, resize, error, rendered, unresponsive). Host → plugin: `request` (ping, activate,
+ * deactivate, command.run), `response`, `event` (pages, storage, settings, theme, surface state).
  */
 export const PROTOCOL_VERSION = 1;
 
@@ -65,7 +65,14 @@ export const responseEnvelope = z.union([
     .strict(),
 ]);
 
-export const NOTIFY_METHODS = ['ready', 'log', 'resize', 'error', 'rendered'] as const;
+export const NOTIFY_METHODS = [
+  'ready',
+  'log',
+  'resize',
+  'error',
+  'rendered',
+  'unresponsive',
+] as const;
 export type NotifyMethod = (typeof NOTIFY_METHODS)[number];
 
 /** A notification from a plugin. `params` is validated per method. */
@@ -252,6 +259,9 @@ export const errorSchema = z
     fatal: z.boolean().optional(),
   })
   .strict();
+
+/** `unresponsive` from a panel or block frame: its code ran this long without a break. */
+export const unresponsiveSchema = z.object({ ms: z.number().finite().min(0).max(1e9) }).strict();
 
 // ---------------------------------------------------------------------------------------------
 // API methods

@@ -27,11 +27,25 @@ export interface UiFont {
   descriptors: FontFaceDescriptors;
 }
 
+/** The guard instrumented code calls (`instrument.ts`), and how long code may run without a break. */
+export interface UiGuardInit {
+  name: string;
+  limitMs: number;
+}
+
 /** What the host sends to a panel or block frame. */
 export interface UiInit extends RuntimeInit {
   surface: UiSurfaceInit;
   fonts: UiFont[];
+  /** Set when the code was instrumented (always in real frames). */
+  guard?: UiGuardInit;
 }
+
+/**
+ * The policy a frame adds once the plugin module starts: no script of any kind loads after it, so
+ * the only code that runs is the instrumented module. Workers may still start (off this thread).
+ */
+export const LOCKED_SCRIPTS_CSP = "script-src 'none'; worker-src blob:";
 
 /** What the UI runtime needs from its environment (the inner frame's window). */
 export interface UiEnv {
@@ -46,15 +60,19 @@ export interface UiEnv {
   console: Pick<Console, 'log' | 'info' | 'warn' | 'error' | 'debug'>;
   ResizeObserver: typeof ResizeObserver;
   FontFace: typeof FontFace;
+  performance: { now(): number };
+  MessageChannel: typeof MessageChannel;
 }
 
 /**
  * Renders one panel or block inside its frame: applies the app's theme (CSS variables and base
- * styles, so plugin UIs match Tessera), loads the plugin module, calls the renderer, and keeps
- * the host informed (content height for blocks, rendered, errors). Self-contained: shipped into
- * the sandbox as source text.
+ * styles, so plugin UIs match Tessera), installs the guard of instrumented code, loads the plugin
+ * module, calls the renderer, and keeps the host informed (content height for blocks, rendered,
+ * errors, a stall). Self-contained: shipped into the sandbox as source text.
  */
 export function runUi(env: UiEnv, kit: RuntimeKit): Promise<void> {
+  // Duplicated from LOCKED_SCRIPTS_CSP: this function can't reference anything outside itself.
+  const LOCKED_CSP = "script-src 'none'; worker-src blob:";
   const BASE_CSS = [
     '*,*::before,*::after{box-sizing:border-box}',
     'html{color-scheme:light}html[data-theme=dark]{color-scheme:dark}',
@@ -143,9 +161,44 @@ export function runUi(env: UiEnv, kit: RuntimeKit): Promise<void> {
     rpc.notify('error', params);
   };
 
+  // Instrumented code calls the guard; set it up before the module loads. Everything it uses is
+  // captured here, before any plugin code runs.
+  let nextTask = (): Promise<void> => Promise.resolve();
+  if (init.guard) {
+    const channel = new env.MessageChannel();
+    const waiting: Array<() => void> = [];
+    channel.port1.onmessage = () => waiting.shift()?.();
+    const post = channel.port2.postMessage.bind(channel.port2);
+    const afterTask = (callback: () => void) => {
+      waiting.push(callback);
+      post(null);
+    };
+    const head = document.head;
+    kit.installGuard({
+      target: env.window,
+      name: init.guard.name,
+      limitMs: init.guard.limitMs,
+      now: env.performance.now.bind(env.performance),
+      afterTask,
+      onFirstRun: () => {
+        // The policy applies once the element is in the document, and stays in force after it's
+        // removed (plugin code has nothing to read).
+        const lock = document.createElement('meta');
+        lock.httpEquiv = 'Content-Security-Policy';
+        lock.content = LOCKED_CSP;
+        head.append(lock);
+        lock.remove();
+      },
+      onStall: (elapsedMs) => rpc.notify('unresponsive', { ms: Math.round(elapsedMs) }),
+    });
+    nextTask = () => new Promise((resolve) => afterTask(resolve));
+  }
+
   return env
     .importPlugin(env.code)
     .then(async (module) => {
+      // Loading a large module takes a while: let the app run before rendering starts.
+      await nextTask();
       const definition = kit.readDefinition(module);
       const { api } = kit.createApi({ rpc, surface: surface.kind, init, definition });
       let result: unknown;

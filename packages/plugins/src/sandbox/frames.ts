@@ -1,4 +1,6 @@
+import { PLUGIN_TIMINGS } from '../constants';
 import type { RpcPort } from '../rpc/endpoint';
+import { uiCodePreparer, type PrepareKey } from './prepare';
 import type { UiInit } from './runtime-ui';
 import type { RuntimeInit } from './runtime-kit';
 import {
@@ -32,6 +34,10 @@ export interface Sandbox {
 export interface SandboxFactory {
   createWorker(options: WorkerSandboxOptions): Promise<Sandbox>;
   createUi(options: UiSandboxOptions): Promise<Sandbox>;
+  /** Gets a plugin's UI code ready ahead of time, so its first panel or block opens sooner. */
+  prepareUi?(code: string, key: PrepareKey): void;
+  /** Drops what was prepared for a plugin (it was uninstalled). */
+  forget?(pluginId: string): void;
 }
 
 interface CommonOptions {
@@ -54,6 +60,8 @@ export interface UiSandboxOptions extends CommonOptions {
   /** Accessible name of the frame. */
   title: string;
   init: UiInit;
+  /** Identifies the code, so it's prepared once per plugin version rather than once per frame. */
+  cacheKey?: PrepareKey;
 }
 
 function readControl(data: unknown): ControlMessage | null {
@@ -148,10 +156,16 @@ export const domSandboxFactory: SandboxFactory = {
       options.onControl,
     );
   },
-  createUi(options) {
+  async createUi(options) {
+    // UI frames may share the app's thread: their code is instrumented so it can be stopped.
+    const prepared = await uiCodePreparer.prepare(options.code, options.cacheKey);
     const nonce = createNonce();
     const frame = newFrame(options.title, 'ui');
     frame.style.cssText = 'display:block;border:0;width:100%;height:100%;background:transparent';
+    const init: UiInit = {
+      ...options.init,
+      guard: { name: prepared.guard, limitMs: PLUGIN_TIMINGS.frameRunLimitMs },
+    };
     return start(
       frame,
       options.container,
@@ -160,10 +174,16 @@ export const domSandboxFactory: SandboxFactory = {
         innerHtml: uiInnerDocument({ nonce, network: options.network }),
         title: options.title,
         runtimeSource: uiRuntimeModuleSource(),
-        code: options.code,
-        init: options.init,
+        code: prepared.code,
+        init,
       },
       options.onControl,
     );
+  },
+  prepareUi(code, key) {
+    void uiCodePreparer.warm(code, key);
+  },
+  forget(pluginId) {
+    void uiCodePreparer.forget(pluginId);
   },
 };

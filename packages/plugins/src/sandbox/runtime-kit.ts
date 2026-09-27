@@ -41,6 +41,23 @@ export type RuntimeDefinition = PluginDefinition<SettingsSchema>;
 /** Host requests the runtime answers. */
 export type RuntimeRequestHandler = (method: string, params: unknown) => unknown;
 
+/** What {@link RuntimeKit.installGuard} needs. */
+export interface GuardOptions {
+  /** Where the global function goes (the frame's window). */
+  target: object;
+  /** Its name, chosen by the host (`instrument.ts`). */
+  name: string;
+  /** How long plugin code may run before the event loop turns. */
+  limitMs: number;
+  now(): number;
+  /** Runs `callback` in a later task, once the event loop has turned. */
+  afterTask(callback: () => void): void;
+  /** The first call: the top of the plugin module, before any of its code. */
+  onFirstRun(): void;
+  /** The code ran too long and is being stopped. */
+  onStall(elapsedMs: number): void;
+}
+
 /** What `createRuntimeKit` returns. */
 export interface RuntimeKit {
   createRpc(port: RuntimePort): RuntimeRpc;
@@ -67,6 +84,13 @@ export interface RuntimeKit {
   /** Formats console arguments like a console would. */
   format(values: readonly unknown[]): string;
   makeError(code: string, message: string, permission?: string): Error;
+  /**
+   * UI frames: defines the global function instrumented plugin code calls at the start of every
+   * function and loop iteration (`instrument.ts`). Once the code has run for `limitMs` without
+   * letting the event loop turn, it throws, and from then on it throws on every call, so the code
+   * unwinds instead of freezing the app, and the host closes the frame.
+   */
+  installGuard(options: GuardOptions): void;
 }
 
 /** The runtime's view of the connection. */
@@ -127,7 +151,8 @@ export function createRuntimeKit(): RuntimeKit {
     >();
     const listeners = new Map<string, Set<(payload: unknown) => void>>();
     let requestHandler: RuntimeRequestHandler | null = null;
-    const post = (message: unknown) => port.postMessage(message);
+    // Bound now, before plugin code runs, so patching MessagePort.prototype can't intercept it.
+    const post = port.postMessage.bind(port);
 
     port.onmessage = (event) => {
       const message = event.data as {
@@ -576,5 +601,51 @@ export function createRuntimeKit(): RuntimeKit {
     return { api, state };
   };
 
-  return { createRpc, createApi, readDefinition, captureConsole, captureErrors, format, makeError };
+  const installGuard: RuntimeKit['installGuard'] = (options) => {
+    const { now, afterTask, onFirstRun, onStall, limitMs } = options;
+    // Captured now: plugin code may replace the global Error later.
+    const Stop = Error;
+    const message = `The plugin's code ran for more than ${limitMs / 1000} seconds without a break, so Tessera stopped it.`;
+    /** When the current run started (the first call since the event loop last turned), or -1. */
+    let started = -1;
+    let calls = 0;
+    let stalled = false;
+    let first = true;
+    const guard = () => {
+      if (stalled) throw new Stop(message);
+      if (started < 0) {
+        started = now();
+        calls = 0;
+        afterTask(() => {
+          started = -1;
+        });
+        if (first) {
+          first = false;
+          onFirstRun();
+        }
+        return;
+      }
+      calls += 1;
+      // Reading the clock on every call would slow tight loops down; every 16th call is enough.
+      if (calls % 16 !== 0) return;
+      const elapsed = now() - started;
+      if (elapsed <= limitMs) return;
+      stalled = true;
+      onStall(elapsed);
+      throw new Stop(message);
+    };
+    // Not writable, not configurable: plugin code can't replace or remove it.
+    Object.defineProperty(options.target, options.name, { value: guard });
+  };
+
+  return {
+    createRpc,
+    createApi,
+    readDefinition,
+    captureConsole,
+    captureErrors,
+    format,
+    makeError,
+    installGuard,
+  };
 }
