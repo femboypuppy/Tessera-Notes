@@ -26,7 +26,7 @@ tauri-plugin-log = "2.9.2"
 tauri-plugin-opener = "2.5.5"
 tauri-plugin-updater = "2.12.0"
 tauri-plugin-window-state = "2.4.1"
-base64 = "0.22.1"
+base64 = "0.23.1"
 log = "0.4.34"
 percent-encoding = "2.3.2"
 rusqlite = { version = "0.40.2", features = ["bundled"] }
