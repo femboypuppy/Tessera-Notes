@@ -95,7 +95,7 @@ Keep this section accurate when scripts change.
    - the pinned image tags in `deploy/` and `docs/self-hosting/upgrading.md`.
 
    Leave `plugin-api` and `create-tessera-plugin` alone unless the plugin API changed.
-2. Write the highlights in `.github/releases/vX.Y.Z.md`. Add a section to `CHANGELOG.md`: the highlights, then `node scripts/release/changelog.ts --to HEAD --repo femboypuppy/Tessera-Notes`, with the compare link pointing at `vX.Y.Z`.
+2. Write the highlights in `.github/releases/vX.Y.Z.md`, each paragraph and list item on one line (GitHub's release page shows every newline as a line break; `scripts/release/changelog.test.ts` checks it). Add a section to `CHANGELOG.md`: the highlights, then `node scripts/release/changelog.ts --to HEAD --repo femboypuppy/Tessera-Notes`, with the compare link pointing at `vX.Y.Z`.
 3. `node scripts/release/github-release.ts verify-version --tag vX.Y.Z` must pass. Commit, push, and wait for CI to pass.
 4. `git tag vX.Y.Z && git push origin vX.Y.Z`. The Release workflow builds the desktop apps and the Docker image, adds `SHA256SUMS.txt` and publishes the release.
 

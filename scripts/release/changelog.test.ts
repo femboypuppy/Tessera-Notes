@@ -1,9 +1,16 @@
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { collectCommits, escapeMentions, previousTag, renderChangelog } from './changelog.ts';
+import {
+  collectCommits,
+  escapeMentions,
+  hardWrappedLines,
+  previousTag,
+  renderChangelog,
+  unwrapMarkdown,
+} from './changelog.ts';
 
 const sha = (n: number) => String(n).repeat(40).slice(0, 40);
 
@@ -101,6 +108,87 @@ describe('escapeMentions', () => {
     });
     expect(markdown).toContain('time the `@perf` specs alone');
     expect(markdown).not.toMatch(/[^`]@perf/);
+  });
+});
+
+describe('unwrapMarkdown', () => {
+  const wrapped = [
+    '**Lead.** It wraps',
+    'onto a second line.',
+    '',
+    '### Highlights',
+    '',
+    '- **One.** A list item that',
+    '  continues here.',
+    '  - A nested item',
+    '    that wraps too.',
+    '- Two.',
+    '',
+    '| System | File |',
+    '| --- | --- |',
+    '| Linux | `a.AppImage` |',
+    '',
+    '```sh',
+    'docker pull x',
+    'docker run y',
+    '```',
+    '> A quote',
+    '> on two lines.',
+  ].join('\n');
+
+  it('puts every paragraph and list item on one line, and leaves the other blocks alone', () => {
+    expect(unwrapMarkdown(wrapped)).toBe(
+      [
+        '**Lead.** It wraps onto a second line.',
+        '',
+        '### Highlights',
+        '',
+        '- **One.** A list item that continues here.',
+        '  - A nested item that wraps too.',
+        '- Two.',
+        '',
+        '| System | File |',
+        '| --- | --- |',
+        '| Linux | `a.AppImage` |',
+        '',
+        '```sh',
+        'docker pull x',
+        'docker run y',
+        '```',
+        '> A quote',
+        '> on two lines.',
+      ].join('\n'),
+    );
+  });
+
+  it('names the wrapped lines, and finds none once unwrapped', () => {
+    expect(hardWrappedLines(wrapped)).toEqual([2, 7, 9]);
+    expect(hardWrappedLines(unwrapMarkdown(wrapped))).toEqual([]);
+  });
+});
+
+describe('release notes in this repository', () => {
+  const dir = path.resolve(import.meta.dirname, '../../.github/releases');
+  const version = (name: string) =>
+    name
+      .replace(/^v|\.md$/g, '')
+      .split('.')
+      .map(Number);
+  const atLeast = (a: number[], b: number[]) => {
+    for (let i = 0; i < 3; i += 1)
+      if ((a[i] ?? 0) !== (b[i] ?? 0)) return (a[i] ?? 0) > (b[i] ?? 0);
+    return true;
+  };
+  // From 0.1.2 on: GitHub's release page shows every newline as a line break.
+  const files = readdirSync(dir).filter(
+    (name) => /^v\d+\.\d+\.\d+\.md$/.test(name) && atLeast(version(name), [0, 1, 2]),
+  );
+
+  it.each(files)('%s has every paragraph and list item on one line', (name) => {
+    const lines = hardWrappedLines(readFileSync(path.join(dir, name), 'utf8'));
+    expect(lines, `wrapped lines (run unwrapMarkdown over the file): ${lines.join(', ')}`).toEqual(
+      [],
+    );
   });
 });
 

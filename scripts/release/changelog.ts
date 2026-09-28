@@ -87,6 +87,50 @@ export interface ChangelogInput {
  * GitHub user or team: "time the @perf specs" becomes "time the `@perf` specs". Code spans and
  * email addresses stay as they are.
  */
+/** A line that starts a Markdown block of its own (so it never continues the line above it). */
+const BLOCK_START = /^\s*(?:#{1,6}\s|[-*+]\s|\d+[.)]\s|\||>|```|~~~|<)/;
+
+/**
+ * Joins hard-wrapped Markdown so every paragraph and list item is one line, and reports which
+ * lines were continuations (1-based). GitHub's release page turns each newline in the notes into a
+ * line break, so wrapped text shows ragged there. Headings, tables, quotes, HTML and fenced code
+ * are left as they are.
+ */
+function joinWrappedLines(text: string): { lines: string[]; joined: number[] } {
+  const lines: string[] = [];
+  const joined: number[] = [];
+  let inFence = false;
+  let joinable = false;
+  text
+    .replace(/\r\n/g, '\n')
+    .split('\n')
+    .forEach((line, index) => {
+      const fence = /^\s*(```|~~~)/.test(line);
+      if (inFence || fence || !line.trim()) {
+        if (fence) inFence = !inFence;
+        lines.push(line);
+        joinable = false;
+      } else if (joinable && !BLOCK_START.test(line)) {
+        lines[lines.length - 1] = `${lines.at(-1)?.trimEnd() ?? ''} ${line.trim()}`;
+        joined.push(index + 1);
+      } else {
+        lines.push(line);
+        // Paragraphs and list items take continuation lines; headings, tables and the rest don't.
+        joinable = !/^\s*(?:#{1,6}\s|\||>|<)/.test(line);
+      }
+    });
+  return { lines, joined };
+}
+
+export function unwrapMarkdown(text: string): string {
+  return joinWrappedLines(text).lines.join('\n');
+}
+
+/** The 1-based numbers of the lines that continue the line above them (see `unwrapMarkdown`). */
+export function hardWrappedLines(text: string): number[] {
+  return joinWrappedLines(text).joined;
+}
+
 export function escapeMentions(text: string): string {
   return text
     .split(/(`[^`]*`)/)
