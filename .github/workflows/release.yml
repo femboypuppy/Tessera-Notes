@@ -5,7 +5,9 @@
 #    that file exists), and creates a draft GitHub Release with it.
 # 2. desktop: `desktop.yml` builds macOS, Windows and Linux bundles into the draft.
 # 3. docker: `docker.yml` pushes the multi-arch image to GHCR with the version tags.
-# 4. checksums: adds SHA256SUMS.txt for every asset.
+# 4. checksums: writes the updater's latest.json from the signed desktop bundles (when the
+#    TAURI_SIGNING_* secrets are set; it fails if a system has no signed bundle), then adds
+#    SHA256SUMS.txt for every asset.
 # 5. publish: publishes the release. If anything fails, the draft stays for you to fix or delete.
 name: Release
 
@@ -82,7 +84,7 @@ jobs:
       push: true
 
   checksums:
-    name: Checksums
+    name: Updater manifest and checksums
     needs: [prepare, desktop]
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -95,6 +97,11 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version-file: .nvmrc
+      - name: latest.json
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_ID: ${{ needs.prepare.outputs.release-id }}
+        run: node scripts/release/github-release.ts updater-json --release-id "$RELEASE_ID"
       - name: SHA256SUMS.txt
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

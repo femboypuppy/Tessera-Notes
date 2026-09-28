@@ -1,7 +1,8 @@
 # Desktop builds (Tauri 2) for macOS (Apple silicon and Intel), Windows and Linux.
 #
 # - Tags: `release.yml` calls this workflow for every `v*` tag with the draft release's ID, and the
-#   bundles (plus the updater's `latest.json` when a signing key is configured) go to that release.
+#   bundles (plus each updater bundle's `.sig` when a signing key is configured) go to that
+#   release. `release.yml` then writes the updater's `latest.json` from those signatures.
 # - Manual runs and pull requests that touch the desktop app: the bundles are workflow artifacts.
 #
 # Secrets (all optional; see HANDOFF/ci.md): TAURI_SIGNING_PRIVATE_KEY and
@@ -97,6 +98,9 @@ jobs:
           UPDATER_PUBLIC_KEY: ${{ vars.TAURI_SIGNING_PUBLIC_KEY }}
         run: |
           args="--target $TARGET"
+          # The key is one line of base64; a newline pasted with it would break the JSON below.
+          UPDATER_PUBLIC_KEY="$(printf '%s' "$UPDATER_PUBLIC_KEY" | tr -d '[:space:]')"
+          echo "pubkey=$UPDATER_PUBLIC_KEY" >> "$GITHUB_OUTPUT"
           if [ "$HAS_UPDATER_KEY" = "true" ]; then
             if [ -z "$UPDATER_PUBLIC_KEY" ]; then
               echo "::error::TAURI_SIGNING_PRIVATE_KEY is set but the TAURI_SIGNING_PUBLIC_KEY variable is not: the app could not verify its updates."
@@ -149,3 +153,25 @@ jobs:
           releaseDraft: ${{ inputs.release-id != '' }}
           uploadWorkflowArtifacts: ${{ inputs.release-id == '' }}
           workflowArtifactNamePattern: tessera-[platform]-[arch]-[bundle]
+          # The four builds run in parallel, and each would read, extend and re-upload one shared
+          # latest.json, so two finishing together could drop a platform. The signatures go up
+          # here; release.yml writes latest.json once from them, after every build.
+          uploadUpdaterSignatures: true
+          uploadUpdaterJson: false
+      # A signed build whose app doesn't carry the public key could never verify an update: check
+      # the compiled binary (the config, key included, is embedded as plain text).
+      - name: The app carries the updater's public key
+        if: steps.options.outputs.pubkey != '' && env.TAURI_SIGNING_PRIVATE_KEY != ''
+        shell: bash
+        env:
+          TARGET: ${{ matrix.target }}
+          UPDATER_PUBLIC_KEY: ${{ steps.options.outputs.pubkey }}
+        run: |
+          binary="apps/desktop/src-tauri/target/$TARGET/release/tessera-desktop"
+          if [ -f "$binary.exe" ]; then binary="$binary.exe"; fi
+          if grep -qF "$UPDATER_PUBLIC_KEY" "$binary"; then
+            echo "$binary embeds the updater's public key."
+          else
+            echo "::error::$binary doesn't contain the TAURI_SIGNING_PUBLIC_KEY variable's key."
+            exit 1
+          fi

@@ -4,8 +4,10 @@ import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
+  buildUpdaterManifest,
   formatChecksums,
   GitHubReleases,
+  updaterPlatforms,
   isPrerelease,
   verifyVersion,
   versionFromTag,
@@ -96,6 +98,66 @@ describe('formatChecksums', () => {
   });
 });
 
+/** The signed updater bundles of a full release, as tauri-action names them. */
+const SIGNED_BUNDLES = [
+  'Tessera_0.1.2_aarch64.app.tar.gz',
+  'Tessera_0.1.2_x64.app.tar.gz',
+  'Tessera_0.1.2_x64-setup.exe',
+  'Tessera_0.1.2_x64_en-US.msi',
+  'Tessera_0.1.2_amd64.AppImage',
+  'Tessera_0.1.2_amd64.deb',
+  'Tessera-0.1.2-1.x86_64.rpm',
+];
+
+describe('updater manifest', () => {
+  it('maps every bundle to the keys the Tauri updater looks up', () => {
+    expect(
+      Object.fromEntries(SIGNED_BUNDLES.map((file) => [file, updaterPlatforms(file)])),
+    ).toEqual({
+      'Tessera_0.1.2_aarch64.app.tar.gz': ['darwin-aarch64', 'darwin-aarch64-app'],
+      'Tessera_0.1.2_x64.app.tar.gz': ['darwin-x86_64', 'darwin-x86_64-app'],
+      // The setup .exe the release notes recommend serves plain `windows-x86_64` too.
+      'Tessera_0.1.2_x64-setup.exe': ['windows-x86_64', 'windows-x86_64-nsis'],
+      'Tessera_0.1.2_x64_en-US.msi': ['windows-x86_64-msi'],
+      'Tessera_0.1.2_amd64.AppImage': ['linux-x86_64', 'linux-x86_64-appimage'],
+      'Tessera_0.1.2_amd64.deb': ['linux-x86_64-deb'],
+      'Tessera-0.1.2-1.x86_64.rpm': ['linux-x86_64-rpm'],
+    });
+    expect(updaterPlatforms('Tessera_0.1.2_aarch64.dmg')).toEqual([]);
+    expect(updaterPlatforms('SHA256SUMS.txt')).toEqual([]);
+  });
+
+  it('points every platform at its bundle in the release, with its signature', () => {
+    const { manifest, missing } = buildUpdaterManifest({
+      tag: 'v0.1.2',
+      repo: 'o/r',
+      pubDate: '2026-09-28T10:00:00.000Z',
+      signatures: SIGNED_BUNDLES.map((file) => ({ file, signature: `sig of ${file}\n` })),
+    });
+    expect(missing).toEqual([]);
+    expect(manifest).toMatchObject({
+      version: '0.1.2',
+      notes: 'Tessera Notes 0.1.2: https://github.com/o/r/releases/tag/v0.1.2',
+      pub_date: '2026-09-28T10:00:00.000Z',
+    });
+    expect(Object.keys(manifest.platforms)).toHaveLength(11);
+    expect(manifest.platforms['windows-x86_64']).toEqual({
+      signature: 'sig of Tessera_0.1.2_x64-setup.exe',
+      url: 'https://github.com/o/r/releases/download/v0.1.2/Tessera_0.1.2_x64-setup.exe',
+    });
+  });
+
+  it('reports the required platforms no signed bundle serves', () => {
+    const { missing } = buildUpdaterManifest({
+      tag: 'v0.1.2',
+      repo: 'o/r',
+      pubDate: '2026-09-28T10:00:00.000Z',
+      signatures: [{ file: 'Tessera_0.1.2_x64_en-US.msi', signature: 's' }],
+    });
+    expect(missing).toEqual(['darwin-aarch64', 'darwin-x86_64', 'windows-x86_64', 'linux-x86_64']);
+  });
+});
+
 /** A fake GitHub API: records requests and answers from a route table. */
 function fakeGitHub(routes: Record<string, (init: RequestInit) => Response>) {
   const calls: Array<{ method: string; url: string; body?: string }> = [];
@@ -176,6 +238,72 @@ describe('GitHubReleases', () => {
       `DELETE ${api}/repos/o/r/releases/assets/3`,
     );
     expect(calls.at(-1)?.body).toBe(text);
+  });
+
+  it('writes latest.json from the signatures once, replacing a partial one', async () => {
+    const assets = [
+      ...SIGNED_BUNDLES.flatMap((name) => [name, `${name}.sig`]),
+      'Tessera_0.1.2_aarch64.dmg',
+      'latest.json',
+    ].map((name, index) => ({ id: index + 1, name, size: 1 }));
+    const routes: Record<string, (init: RequestInit) => Response> = {
+      [`GET ${api}/repos/o/r/releases/7`]: () => Response.json(release({ tag_name: 'v0.1.2' })),
+      [`GET ${api}/repos/o/r/releases/7/assets?per_page=100&page=1`]: () => Response.json(assets),
+      [`DELETE ${api}/repos/o/r/releases/assets/${assets.length}`]: () =>
+        new Response(null, { status: 204 }),
+      ['POST https://uploads.example/repos/o/r/releases/7/assets?name=latest.json']: () =>
+        Response.json({ id: 99 }),
+    };
+    for (const asset of assets.filter((a) => a.name.endsWith('.sig'))) {
+      routes[`GET ${api}/repos/o/r/releases/assets/${asset.id}`] = () =>
+        new Response(`sig:${asset.name}`);
+    }
+    const { calls, fetchImpl } = fakeGitHub(routes);
+    const client = new GitHubReleases({ token: 't', repo: 'o/r', apiUrl: api, fetch: fetchImpl });
+    const manifest = await client.uploadUpdaterManifest('7', '2026-09-28T10:00:00.000Z');
+    expect(manifest?.platforms['darwin-aarch64']?.signature).toBe(
+      'sig:Tessera_0.1.2_aarch64.app.tar.gz.sig',
+    );
+    expect(calls.map((call) => `${call.method} ${call.url}`)).toContain(
+      `DELETE ${api}/repos/o/r/releases/assets/${assets.length}`,
+    );
+    expect(JSON.parse(calls.at(-1)?.body ?? '')).toEqual(manifest);
+  });
+
+  it('skips latest.json without signatures, and refuses one that leaves a system out', async () => {
+    const unsigned = fakeGitHub({
+      [`GET ${api}/repos/o/r/releases/7`]: () => Response.json(release({ tag_name: 'v0.1.2' })),
+      [`GET ${api}/repos/o/r/releases/7/assets?per_page=100&page=1`]: () =>
+        Response.json([{ id: 1, name: 'Tessera_0.1.2_x64-setup.exe', size: 1 }]),
+    });
+    const client = new GitHubReleases({
+      token: 't',
+      repo: 'o/r',
+      apiUrl: api,
+      fetch: unsigned.fetchImpl,
+    });
+    expect(await client.uploadUpdaterManifest('7', '2026-09-28T10:00:00.000Z')).toBeNull();
+    expect(unsigned.calls.every((call) => call.method === 'GET')).toBe(true);
+
+    const partial = fakeGitHub({
+      [`GET ${api}/repos/o/r/releases/7`]: () => Response.json(release({ tag_name: 'v0.1.2' })),
+      [`GET ${api}/repos/o/r/releases/7/assets?per_page=100&page=1`]: () =>
+        Response.json([
+          { id: 1, name: 'Tessera_0.1.2_x64-setup.exe', size: 1 },
+          { id: 2, name: 'Tessera_0.1.2_x64-setup.exe.sig', size: 1 },
+        ]),
+      [`GET ${api}/repos/o/r/releases/assets/2`]: () => new Response('sig'),
+    });
+    const partialClient = new GitHubReleases({
+      token: 't',
+      repo: 'o/r',
+      apiUrl: api,
+      fetch: partial.fetchImpl,
+    });
+    await expect(
+      partialClient.uploadUpdaterManifest('7', '2026-09-28T10:00:00.000Z'),
+    ).rejects.toThrow(/darwin-aarch64, darwin-x86_64, linux-x86_64/);
+    expect(partial.calls.some((call) => call.method !== 'GET')).toBe(false);
   });
 
   it('publishes drafts, making stable releases the latest', async () => {

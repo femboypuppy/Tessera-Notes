@@ -3,6 +3,7 @@
  *
  *   node scripts/release/github-release.ts verify-version --tag v0.1.0
  *   node scripts/release/github-release.ts draft --tag v0.1.0 --notes release-notes.md
+ *   node scripts/release/github-release.ts updater-json --release-id 123
  *   node scripts/release/github-release.ts checksums --release-id 123
  *   node scripts/release/github-release.ts publish --release-id 123
  *
@@ -106,6 +107,96 @@ export function formatChecksums(entries: ReadonlyArray<{ name: string; sha256: s
     .sort((a, b) => a.name.localeCompare(b.name))
     .map((entry) => `${entry.sha256}  ${entry.name}`)
     .join('\n')}\n`;
+}
+
+export const UPDATER_MANIFEST = 'latest.json';
+
+/**
+ * The platforms each updater must find in `latest.json`: the Tauri updater looks up
+ * `{os}-{arch}-{installer}` first (the way the app was installed), then `{os}-{arch}`.
+ */
+export const REQUIRED_UPDATER_PLATFORMS = [
+  'darwin-aarch64',
+  'darwin-x86_64',
+  'windows-x86_64',
+  'linux-x86_64',
+] as const;
+
+interface UpdaterBundle {
+  os: 'darwin' | 'windows' | 'linux';
+  installer: 'app' | 'nsis' | 'msi' | 'appimage' | 'deb' | 'rpm';
+  /** Whether the bundle also serves `{os}-{arch}` (the setup .exe over the .msi on Windows). */
+  generic: boolean;
+}
+
+const UPDATER_BUNDLES: ReadonlyArray<{ suffix: string; bundle: UpdaterBundle }> = [
+  { suffix: '.app.tar.gz', bundle: { os: 'darwin', installer: 'app', generic: true } },
+  { suffix: '-setup.exe', bundle: { os: 'windows', installer: 'nsis', generic: true } },
+  { suffix: '.msi', bundle: { os: 'windows', installer: 'msi', generic: false } },
+  { suffix: '.AppImage', bundle: { os: 'linux', installer: 'appimage', generic: true } },
+  { suffix: '.deb', bundle: { os: 'linux', installer: 'deb', generic: false } },
+  { suffix: '.rpm', bundle: { os: 'linux', installer: 'rpm', generic: false } },
+];
+
+/**
+ * The updater keys a signed bundle serves, from its release file name (`Tessera_0.1.2_x64-setup.exe`,
+ * `Tessera_0.1.2_aarch64.app.tar.gz`, `Tessera-0.1.2-1.x86_64.rpm`…), or [] for other files.
+ */
+export function updaterPlatforms(fileName: string): string[] {
+  const entry = UPDATER_BUNDLES.find(({ suffix }) => fileName.endsWith(suffix));
+  if (!entry) return [];
+  const stem = fileName.slice(0, -entry.suffix.length);
+  const arch = /(?:^|[_.-])(aarch64|arm64)(?:$|[_.-])/.test(stem)
+    ? 'aarch64'
+    : /(?:^|[_.-])(x64|x86_64|amd64)(?:$|[_.-])/.test(stem)
+      ? 'x86_64'
+      : null;
+  if (!arch) return [];
+  const { os, installer, generic } = entry.bundle;
+  return generic ? [`${os}-${arch}`, `${os}-${arch}-${installer}`] : [`${os}-${arch}-${installer}`];
+}
+
+export interface UpdaterManifest {
+  version: string;
+  notes: string;
+  pub_date: string;
+  platforms: Record<string, { signature: string; url: string }>;
+}
+
+/**
+ * The updater's `latest.json` for one release, from the signatures of its updater bundles
+ * (`<bundle>.sig`, which the Tauri CLI writes when it has the signing key). `missing` lists the
+ * required platforms no bundle serves.
+ */
+export function buildUpdaterManifest(options: {
+  tag: string;
+  repo: string;
+  pubDate: string;
+  signatures: ReadonlyArray<{ file: string; signature: string }>;
+}): { manifest: UpdaterManifest; missing: string[] } {
+  const version = versionFromTag(options.tag);
+  const platforms: UpdaterManifest['platforms'] = {};
+  for (const { file, signature } of options.signatures) {
+    const url = `https://github.com/${options.repo}/releases/download/${encodeURIComponent(options.tag)}/${encodeURIComponent(file)}`;
+    for (const platform of updaterPlatforms(file)) {
+      if (platforms[platform]) {
+        throw new Error(`Two updater bundles serve ${platform}: ${file} and another one.`);
+      }
+      platforms[platform] = { signature: signature.trim(), url };
+    }
+  }
+  const sorted = Object.fromEntries(
+    Object.entries(platforms).sort(([a], [b]) => a.localeCompare(b)),
+  );
+  return {
+    manifest: {
+      version,
+      notes: `Tessera Notes ${version}: https://github.com/${options.repo}/releases/tag/${options.tag}`,
+      pub_date: options.pubDate,
+      platforms: sorted,
+    },
+    missing: REQUIRED_UPDATER_PLATFORMS.filter((platform) => !platforms[platform]),
+  };
 }
 
 type Fetch = typeof fetch;
@@ -222,6 +313,75 @@ export class GitHubReleases {
     return hash.digest('hex');
   }
 
+  private async text(asset: ReleaseAsset): Promise<string> {
+    const response = await this.request(`/repos/${this.options.repo}/releases/assets/${asset.id}`, {
+      headers: { accept: 'application/octet-stream' },
+    });
+    return response.text();
+  }
+
+  /** Replaces the asset `name` of release `release` with `body`. */
+  private async replaceAsset(
+    release: Release,
+    assets: ReleaseAsset[],
+    name: string,
+    body: string,
+    contentType: string,
+  ): Promise<void> {
+    const previous = assets.find((asset) => asset.name === name);
+    if (previous) {
+      await this.request(`/repos/${this.options.repo}/releases/assets/${previous.id}`, {
+        method: 'DELETE',
+      });
+    }
+    const uploadUrl = release.upload_url.replace(/\{.*\}$/, '');
+    await this.request(`${uploadUrl}?name=${encodeURIComponent(name)}`, {
+      method: 'POST',
+      headers: { 'content-type': contentType },
+      body,
+    });
+  }
+
+  /**
+   * Writes the updater's `latest.json` from the release's signed bundles, once every desktop build
+   * has uploaded (the builds run in parallel, so they can't each update one shared file). Returns
+   * null when the release has no signatures: the signing key isn't configured, and the app from
+   * this release doesn't update itself. Throws when a required platform has no signed bundle.
+   */
+  async uploadUpdaterManifest(id: string, pubDate: string): Promise<UpdaterManifest | null> {
+    const release = await this.getRelease(id);
+    const assets = await this.listAssets(id);
+    const signatureAssets = assets.filter((asset) => asset.name.endsWith('.sig'));
+    if (!signatureAssets.length) return null;
+    const signatures: Array<{ file: string; signature: string }> = [];
+    for (const asset of signatureAssets) {
+      const file = asset.name.slice(0, -'.sig'.length);
+      if (!assets.some((candidate) => candidate.name === file)) {
+        throw new Error(`${asset.name} has no ${file} next to it in the release.`);
+      }
+      signatures.push({ file, signature: await this.text(asset) });
+    }
+    const { manifest, missing } = buildUpdaterManifest({
+      tag: release.tag_name,
+      repo: this.options.repo,
+      pubDate,
+      signatures,
+    });
+    if (missing.length) {
+      throw new Error(
+        `No signed updater bundle for ${missing.join(', ')}; the updater would skip those systems.`,
+      );
+    }
+    await this.replaceAsset(
+      release,
+      assets,
+      UPDATER_MANIFEST,
+      `${JSON.stringify(manifest, null, 2)}\n`,
+      'application/json',
+    );
+    return manifest;
+  }
+
   /** Computes SHA256SUMS.txt over every other asset and (re)uploads it. Returns its contents. */
   async uploadChecksums(id: string): Promise<string> {
     const release = await this.getRelease(id);
@@ -232,18 +392,7 @@ export class GitHubReleases {
       entries.push({ name: asset.name, sha256: await this.sha256(asset) });
     }
     const text = formatChecksums(entries);
-    const previous = assets.find((asset) => asset.name === CHECKSUMS_FILE);
-    if (previous) {
-      await this.request(`/repos/${this.options.repo}/releases/assets/${previous.id}`, {
-        method: 'DELETE',
-      });
-    }
-    const uploadUrl = release.upload_url.replace(/\{.*\}$/, '');
-    await this.request(`${uploadUrl}?name=${encodeURIComponent(CHECKSUMS_FILE)}`, {
-      method: 'POST',
-      headers: { 'content-type': 'text/plain; charset=utf-8' },
-      body: text,
-    });
+    await this.replaceAsset(release, assets, CHECKSUMS_FILE, text, 'text/plain; charset=utf-8');
     return text;
   }
 
@@ -293,6 +442,20 @@ async function main(): Promise<number> {
         appendFileSync(process.env.GITHUB_OUTPUT, `id=${release.id}\n`);
       return 0;
     }
+    case 'updater-json': {
+      const manifest = await client().uploadUpdaterManifest(
+        values['release-id'] ?? '',
+        new Date().toISOString(),
+      );
+      if (manifest) {
+        console.info(`${UPDATER_MANIFEST}: ${Object.keys(manifest.platforms).join(', ')}`);
+      } else {
+        console.info(
+          `No signed updater bundles (TAURI_SIGNING_PRIVATE_KEY isn't set); no ${UPDATER_MANIFEST}, so this release doesn't update installed apps.`,
+        );
+      }
+      return 0;
+    }
     case 'checksums': {
       const text = await client().uploadChecksums(values['release-id'] ?? '');
       process.stdout.write(text);
@@ -304,7 +467,9 @@ async function main(): Promise<number> {
       return 0;
     }
     default:
-      console.error('Usage: github-release.ts verify-version|draft|checksums|publish [options]');
+      console.error(
+        'Usage: github-release.ts verify-version|draft|updater-json|checksums|publish [options]',
+      );
       return 2;
   }
 }
