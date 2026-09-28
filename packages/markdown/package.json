@@ -20,7 +20,7 @@
     "@types/mdast": "4.0.4",
     "@types/unist": "3.0.3",
     "character-entities": "2.0.2",
-    "dompurify": "3.4.15",
+    "dompurify": "3.4.16",
     "mdast-util-from-markdown": "2.0.3",
     "mdast-util-frontmatter": "2.0.1",
     "mdast-util-gfm": "3.1.0",

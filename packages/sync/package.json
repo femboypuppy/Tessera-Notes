@@ -26,9 +26,9 @@
     "@hocuspocus/provider": "4.7.0",
     "@tessera/core": "workspace:*",
     "@tessera/ui": "workspace:*",
-    "lucide-react": "1.47.0",
+    "lucide-react": "1.48.0",
     "y-protocols": "1.0.7",
-    "yjs": "13.6.32",
+    "yjs": "13.6.33",
     "zod": "4.6.5"
   },
   "peerDependencies": {
