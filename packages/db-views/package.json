@@ -32,9 +32,9 @@
     "@tanstack/react-virtual": "3.14.13",
     "@tessera/core": "workspace:*",
     "@tessera/ui": "workspace:*",
-    "lucide-react": "1.47.0",
+    "lucide-react": "1.48.0",
     "papaparse": "5.7.0",
-    "yjs": "13.6.32",
+    "yjs": "13.6.33",
     "zod": "4.6.5"
   },
   "peerDependencies": {

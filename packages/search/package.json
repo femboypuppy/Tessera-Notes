@@ -31,10 +31,10 @@
     "graphology-layout": "0.6.1",
     "graphology-layout-forceatlas2": "0.10.1",
     "graphology-types": "0.24.8",
-    "lucide-react": "1.47.0",
+    "lucide-react": "1.48.0",
     "minisearch": "7.2.0",
     "sigma": "3.0.3",
-    "yjs": "13.6.32"
+    "yjs": "13.6.33"
   },
   "peerDependencies": {
     "react": "^19.0.0",
