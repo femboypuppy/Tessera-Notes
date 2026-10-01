@@ -90,6 +90,10 @@ export const en = {
   trashEmpty: 'The trash is empty',
   trashEmptyHint: 'Deleted pages appear here until you remove them for good.',
   filterTrash: 'Filter the trash',
+  sortTrash: 'Sort trashed pages',
+  trashNewestFirst: 'Newest first',
+  trashOldestFirst: 'Oldest first',
+  trashTitleSort: 'Title',
   emptyTrash: 'Empty trash',
   emptyTrashConfirm: 'Delete everything in the trash forever?',
   emptyTrashConfirmHint:

@@ -1,6 +1,6 @@
 import type { PageMeta } from '@tessera/core';
 import { useAppContext, usePages } from '@tessera/core/react';
-import { Button, EmptyState, Input } from '@tessera/ui';
+import { Button, EmptyState, Input, Select } from '@tessera/ui';
 import { RotateCcw, Search, Trash2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { t } from '../../i18n';
@@ -73,13 +73,19 @@ export function TrashView() {
   const ctx = useAppContext();
   const snapshot = usePages();
   const [query, setQuery] = useState('');
+  const [sort, setSort] = useState<'newest' | 'oldest' | 'title'>('newest');
   const trash = snapshot.trash();
   const filtered = useMemo(() => {
     const needle = query.trim().toLocaleLowerCase();
-    return needle
+    const matching = needle
       ? trash.filter((page) => displayTitle(page).toLocaleLowerCase().includes(needle))
       : trash;
-  }, [trash, query]);
+    return [...matching].sort((a, b) => {
+      if (sort === 'title') return displayTitle(a).localeCompare(displayTitle(b));
+      const difference = (a.trashedAt ?? 0) - (b.trashedAt ?? 0);
+      return (sort === 'newest' ? -difference : difference) || a.id.localeCompare(b.id);
+    });
+  }, [trash, query, sort]);
 
   const emptyAll = async () => {
     const confirmed = await ctx.confirm({
@@ -116,18 +122,31 @@ export function TrashView() {
         />
       ) : (
         <>
-          <div className="relative mt-6">
-            <Search
-              className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-fg-subtle"
-              aria-hidden="true"
-            />
-            <Input
-              type="search"
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder={t('filterTrash')}
-              aria-label={t('filterTrash')}
-              className="pl-8"
+          <div className="mt-6 flex flex-wrap items-center gap-3">
+            <div className="relative min-w-48 flex-1">
+              <Search
+                className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-fg-subtle"
+                aria-hidden="true"
+              />
+              <Input
+                type="search"
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder={t('filterTrash')}
+                aria-label={t('filterTrash')}
+                className="pl-8"
+              />
+            </div>
+            <Select
+              aria-label={t('sortTrash')}
+              value={sort}
+              onValueChange={(value) => setSort(value as typeof sort)}
+              options={[
+                { value: 'newest', label: t('trashNewestFirst') },
+                { value: 'oldest', label: t('trashOldestFirst') },
+                { value: 'title', label: t('trashTitleSort') },
+              ]}
+              className="w-44"
             />
           </div>
           {filtered.length === 0 ? (
