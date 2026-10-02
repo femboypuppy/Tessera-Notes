@@ -87,6 +87,18 @@ describe('slash menu', () => {
     expect(editor.state.doc.textContent).toBe('');
   });
 
+  it('inserts today’s date as localized text', async () => {
+    const editor = setup();
+    typeText(editor, '/date');
+    await settle();
+    expect(menuTitles()[0]).toBe('Date');
+    pressKey(editor, 'Enter');
+    await settle();
+    expect(editor.state.doc.textContent).toBe(
+      new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(new Date()),
+    );
+  });
+
   it('ranks recently used items first and shows them in "Recently used"', async () => {
     app.ctx.settings.device.set(RECENT_BLOCKS_KEY, ['callout']);
     const editor = setup();

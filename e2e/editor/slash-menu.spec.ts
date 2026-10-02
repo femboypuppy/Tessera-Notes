@@ -63,6 +63,9 @@ test('inserts every block type from the slash menu', async ({ page }) => {
   await slash(page, 'callout');
   await type('Called out');
   await continueBelow(page);
+  await slash(page, 'date');
+  await enter();
+  await continueBelow(page);
   await slash(page, 'divider');
   await slash(page, 'code');
   await type('let x = 1');
@@ -109,6 +112,9 @@ test('inserts every block type from the slash menu', async ({ page }) => {
   await page.keyboard.press('Enter');
   await expect(editor(page).locator('.tess-page-link')).toHaveText('Mission control');
 
+  const today = await page.evaluate(() =>
+    new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(new Date()),
+  );
   await expect
     .poll(() => outline(page))
     .toEqual([
@@ -122,6 +128,7 @@ test('inserts every block type from the slash menu', async ({ page }) => {
       'toggle:Toggle titleInside the toggle',
       'blockquote:Quoted',
       'callout:Called out',
+      `paragraph:${today}`,
       'horizontalRule:',
       'codeBlock:let x = 1',
       'table:Cell',
