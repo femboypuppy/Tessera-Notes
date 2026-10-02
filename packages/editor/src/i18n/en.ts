@@ -66,6 +66,8 @@ export const en = {
   blockBookmarkHint: 'Save a link as a visual card.',
   blockPageLink: 'Link to page',
   blockPageLinkHint: 'Link to another page in this workspace.',
+  blockDate: 'Date',
+  blockDateHint: 'Insert today’s date.',
 
   // Block handle and block menu
   blockHandle: 'Drag to move, click for options',

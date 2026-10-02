@@ -24,6 +24,7 @@ top. Databases and plugin blocks appear here too.
 | To-do          | `/todo`        | `[] ` or `[x] `     | Click the box to check it off.                          |
 | Quote          | `/quote`       | `> `                |                                                         |
 | Callout        | `/callout`     |                     | Pick an emoji and a tone: info, success, warning, danger. |
+| Date           | `/date`        |                     | Insert today’s date.                                    |
 | Toggle         | `/toggle`      |                     | A summary line that hides its contents. Remembers whether it's open. |
 | Code           | `/code`        | ```` ``` ````       | Syntax highlighting, a language picker and a copy button. |
 | Divider        | `/divider`     | `---`               |                                                         |
