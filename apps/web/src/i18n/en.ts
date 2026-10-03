@@ -23,6 +23,7 @@ export const en = {
   pages: 'Pages',
   favorites: 'Favorites',
   newPage: 'New page',
+  collapseAll: 'Collapse all',
   newSubpage: 'Add a page inside',
   search: 'Search',
   trash: 'Trash',

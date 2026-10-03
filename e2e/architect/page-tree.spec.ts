@@ -60,6 +60,21 @@ test('nests, un-nests and reorders pages from the keyboard', async ({ page }) =>
   await expect(page.getByRole('textbox', { name: 'Page title' })).toHaveValue('Gamma');
 });
 
+test('collapses every expanded level from the Pages section', async ({ page }) => {
+  await createPage(page, 'Delta');
+  const tree = pageTree(page);
+  const row = (name: string) => tree.getByRole('treeitem', { name, exact: true });
+
+  await row('Gamma').dragTo(row('Alpha'));
+  await expect.poll(() => treeOutline(page)).toEqual(['Alpha:1', 'Gamma:2', 'Beta:1', 'Delta:1']);
+  await row('Beta').dragTo(row('Gamma'));
+  await expect.poll(() => treeOutline(page)).toEqual(['Alpha:1', 'Gamma:2', 'Beta:3', 'Delta:1']);
+
+  await page.getByRole('button', { name: 'Collapse all' }).click();
+  await expect.poll(() => treeOutline(page)).toEqual(['Alpha:1', 'Delta:1']);
+  await expect(row('Alpha')).toHaveAttribute('aria-expanded', 'false');
+});
+
 test('moves pages from the row menu', async ({ page }) => {
   const tree = pageTree(page);
   const row = (name: string) => tree.getByRole('treeitem', { name, exact: true });
