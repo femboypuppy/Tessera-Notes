@@ -318,9 +318,11 @@ test.describe('the desktop app (Tauri mocked)', () => {
     expect((await fakeState(page)).saveDialogs).toEqual([
       { title: 'Save as', name: 'Crew - Table.csv', filter: 'CSV file' },
     ]);
-    await expect(page.getByText('Exported 1 rows')).toBeVisible();
+    await expect(page.getByText('Exported 1 row', { exact: true })).toBeVisible();
 
-    // Cancelled: nothing written, and no "exported" toast.
+    // Cancelled: nothing written, and no "exported" toast. The first menu is gone before the
+    // second opens (a click during its exit animation would close it again).
+    await expect(page.getByRole('menu')).toHaveCount(0);
     await queueSave(page, null);
     await page.getByRole('button', { name: 'More database actions' }).click();
     await page.getByRole('menuitem', { name: 'Export view as CSV' }).click();
