@@ -86,7 +86,9 @@ pnpm dev
 
 `pnpm dev` starts the web app (with hot reload) and the sync server together, the app proxying
 `/api` and `/sync` to the server. [CONTRIBUTING.md](https://github.com/femboypuppy/Tessera-Notes/blob/main/CONTRIBUTING.md)
-explains how to run them separately, the desktop app and the tests.
+explains how to run them separately, the desktop app and the tests. On Windows, clone into a short
+folder such as `C:\src`, or run `git config --global core.longpaths true` first: some test
+fixtures have long file names.
 
 ## Next
 

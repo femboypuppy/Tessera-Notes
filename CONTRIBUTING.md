@@ -41,6 +41,12 @@ pnpm install
 pnpm dev
 ```
 
+On Windows, clone into a short folder such as `C:\src`. The Notion import fixtures keep Notion's
+real file names, up to 184 characters inside the repository, and Git for Windows refuses paths
+over 260 characters ("Filename too long"). To clone deeper than that, turn on long paths first:
+`git config --global core.longpaths true`, or for this clone only,
+`git clone -c core.longpaths=true https://github.com/femboypuppy/Tessera-Notes.git`.
+
 `pnpm dev` starts the web app (hot reload) and the sync server together — the app proxies `/api`
 and `/sync` to the server — and prints the web app's address.
 
