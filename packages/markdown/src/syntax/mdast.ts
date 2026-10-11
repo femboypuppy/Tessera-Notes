@@ -281,7 +281,8 @@ const handleText: Handle = (node: { value: string }, _parent, state, info) => {
 
 /**
  * Hard breaks: a plain line ending (Obsidian renders single line breaks), or `<br>` where a line
- * ending is not allowed (table cells, headings, toggle summaries).
+ * ending is not allowed (table cells, headings, toggle summaries; `calloutNode` in `from-doc.ts`
+ * writes callout titles' breaks as `<br>` itself).
  */
 const handleBreak: Handle = (_node, _parent, state) => {
   if (
