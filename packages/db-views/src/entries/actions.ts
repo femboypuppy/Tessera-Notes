@@ -3,13 +3,14 @@ import {
   listProperties,
   listRows,
   listViews,
+  permanentlyDeletedPageIds,
   resolveRows,
   type AppContext,
 } from '@tessera/core';
 import { t } from '../i18n';
 import { csvFileName, rowsToCsv } from '../csv/csv';
 import { createDatabase, viewTypeName } from '../model/operations';
-import { removeDeletedFromRelations } from '../model/relations';
+import { sweepDeletedFromRelations } from '../model/relations';
 import { existingBackReferenceIndex } from '../model/back-references';
 import { runQuery } from '../query/run';
 import { createQueryContext } from '../query/types';
@@ -86,15 +87,25 @@ export async function exportDatabaseCsv(ctx: AppContext, databaseId: string): Pr
   }
 }
 
-/** Cleans relations after permanent deletions (see `removeDeletedFromRelations`). */
-export async function cleanUpAfterDeletion(
-  ctx: AppContext,
-  deleted: ReadonlySet<string>,
-  deletedDatabases: ReadonlySet<string>,
-): Promise<void> {
-  await removeDeletedFromRelations(ctx, deleted, deletedDatabases);
+/** Device setting: how many permanent deletions this device's last sweep of a workspace covered. */
+export function relationSweepKey(workspaceId: string): string {
+  return `databases.relationSweep.${workspaceId}`;
+}
+
+/**
+ * Removes references to permanently deleted pages from every relation and from the "Linked from"
+ * index (see `sweepDeletedFromRelations`), unless this device already swept every deletion the
+ * workspace records. Returns how many references it removed.
+ */
+export async function sweepAfterDeletions(ctx: AppContext): Promise<number> {
+  const deleted = permanentlyDeletedPageIds(ctx.workspace.doc);
+  const key = relationSweepKey(ctx.workspace.info.id);
+  if (ctx.settings.device.get(key) === deleted.size) return 0;
+  const removed = await sweepDeletedFromRelations(ctx);
   const index = existingBackReferenceIndex(ctx);
-  for (const id of deletedDatabases) index?.remove(id);
+  for (const id of deleted) index?.remove(id);
+  ctx.settings.device.set(key, deleted.size);
+  return removed;
 }
 
 /** Keeps the "Linked from" index current when a database changes (only once it was built). */

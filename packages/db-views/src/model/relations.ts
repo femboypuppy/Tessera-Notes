@@ -5,6 +5,7 @@ import {
   isValidId,
   listProperties,
   listRows,
+  permanentlyDeletedPageIds,
   setRowValue,
   updateProperty,
   type AppContext,
@@ -192,14 +193,14 @@ export async function unlinkTwoWay(
 
 /**
  * Removes permanently deleted pages from every relation in the workspace and turns relations to a
- * deleted database into one-way relations. Runs after `page.deleted` events (local ones only: the
- * client that deleted does the cleanup, and the edit syncs everywhere).
+ * deleted database into one-way relations. Returns how many references it removed.
  */
 export async function removeDeletedFromRelations(
   ctx: Pick<AppContext, 'loadDatabaseDoc' | 'workspace'>,
   deleted: ReadonlySet<string>,
   deletedDatabases: ReadonlySet<string>,
-): Promise<void> {
+): Promise<number> {
+  let removed = 0;
   const databases = ctx.workspace.pages
     .getSnapshot()
     .all()
@@ -221,6 +222,7 @@ export async function removeDeletedFromRelations(
           for (const property of relations) {
             const ids = relationIds(row.values[property.id]);
             if (!ids.some((id) => deleted.has(id))) continue;
+            removed += ids.filter((id) => deleted.has(id)).length;
             writeIds(
               doc,
               row.id,
@@ -234,4 +236,20 @@ export async function removeDeletedFromRelations(
       handle.release();
     }
   }
+  return removed;
+}
+
+/**
+ * Removes every page the workspace records as permanently deleted from every relation: the
+ * deleting client's cleanup may never have finished (the tab closed), and any client can finish it,
+ * because a page that is merely missing here is never counted as deleted. Writes nothing when
+ * nothing dangles. Returns how many references it removed.
+ */
+export async function sweepDeletedFromRelations(
+  ctx: Pick<AppContext, 'loadDatabaseDoc' | 'workspace'>,
+): Promise<number> {
+  const deleted = permanentlyDeletedPageIds(ctx.workspace.doc);
+  if (deleted.size === 0) return 0;
+  // A relation whose target database is in the set points at a deleted database.
+  return removeDeletedFromRelations(ctx, deleted, deleted);
 }

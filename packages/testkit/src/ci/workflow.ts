@@ -14,6 +14,7 @@ export interface WorkflowStep {
   shell?: string;
   'working-directory'?: string;
   'continue-on-error'?: boolean | string;
+  'timeout-minutes'?: number;
 }
 
 export interface WorkflowJob {

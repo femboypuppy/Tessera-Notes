@@ -108,28 +108,36 @@ export const databasesFeature = defineFeature({
     },
   ],
   activate(ctx) {
-    // Permanent deletions leave dangling relation values: clean them up (only the client that
-    // deleted does it; the edits sync to everyone).
-    let deleted = new Set<string>();
-    let deletedDatabases = new Set<string>();
-    let scheduled = false;
-    const offDeleted = ctx.events.on('page.deleted', ({ pageId, page, local }) => {
-      if (!local) return;
-      deleted.add(pageId);
-      if (page.kind === 'database') deletedDatabases.add(pageId);
-      if (scheduled) return;
-      scheduled = true;
-      queueMicrotask(() => {
-        const ids = deleted;
-        const databases = deletedDatabases;
-        deleted = new Set();
-        deletedDatabases = new Set();
-        scheduled = false;
-        void loadActions()
-          .then(({ cleanUpAfterDeletion }) => cleanUpAfterDeletion(ctx, ids, databases))
-          .catch((error: unknown) => console.error('[databases] relation cleanup failed', error));
-      });
+    // Permanent deletions leave dangling relation values. The workspace records every deletion, so
+    // any client can remove them: after each deletion (local or remote) and once at startup, which
+    // also finishes a cleanup a closed tab interrupted. Only when this device may write: with no
+    // server, or synced with an editor's connection (a viewer's edits would stay on this device).
+    const syncProvider = ctx.services.syncProvider;
+    const canWrite = () => {
+      const { status, readOnly } = syncProvider.getStatus();
+      return status === 'local' || (status === 'synced' && readOnly !== true);
+    };
+    let pending = true;
+    let running = false;
+    const sweep = () => {
+      if (!pending || running || !canWrite()) return;
+      pending = false;
+      running = true;
+      void loadActions()
+        .then(({ sweepAfterDeletions }) => sweepAfterDeletions(ctx))
+        .catch((error: unknown) => console.error('[databases] relation cleanup failed', error))
+        .finally(() => {
+          running = false;
+          // Deletions that arrived while it ran.
+          if (pending) queueMicrotask(sweep);
+        });
+    };
+    const offDeleted = ctx.events.on('page.deleted', () => {
+      pending = true;
+      queueMicrotask(sweep);
     });
+    const offStatus = syncProvider.onStatus(sweep);
+    queueMicrotask(sweep);
     const offChanged = ctx.events.on('database.changed', ({ databaseId }) => {
       void loadActions()
         .then(({ refreshBackReferences }) => refreshBackReferences(ctx, databaseId))
@@ -137,6 +145,7 @@ export const databasesFeature = defineFeature({
     });
     return () => {
       offDeleted();
+      offStatus();
       offChanged();
       overlays.reset();
     };

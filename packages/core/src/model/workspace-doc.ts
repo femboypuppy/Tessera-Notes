@@ -15,6 +15,11 @@ export const WORKSPACE_DOC_KEYS = {
   settings: 'settings',
   /** `Y.Map`: `schemaVersion`, `createdAt`. */
   meta: 'meta',
+  /**
+   * `Y.Map<pageId, deletedAt>`: every page deleted permanently, so that any client can tell a
+   * deleted page from one it hasn't received yet (and clean up references to it safely).
+   */
+  deletedPages: 'deletedPages',
 } as const;
 
 /** @internal Raw access for core helpers. Other packages must use the typed helpers. */
@@ -25,6 +30,11 @@ export function pagesMapOf(ws: Y.Doc): Y.Map<unknown> {
 /** @internal */
 export function settingsMapOf(ws: Y.Doc): Y.Map<unknown> {
   return ws.getMap<unknown>(WORKSPACE_DOC_KEYS.settings);
+}
+
+/** @internal */
+export function deletedPagesMapOf(ws: Y.Doc): Y.Map<unknown> {
+  return ws.getMap<unknown>(WORKSPACE_DOC_KEYS.deletedPages);
 }
 
 /** @internal */
