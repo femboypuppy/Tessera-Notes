@@ -64,6 +64,10 @@ Open **Export** from the top bar or the palette, choose what to export and in wh
 Links export as `[[wikilinks]]` by default; choose relative markdown links if the tool you're
 moving to prefers them.
 
+In a browser the file goes to your downloads. The desktop app asks where to save it, starting in
+your Downloads folder, and the export window shows where it went; **Save as…** saves another copy.
+Database CSV exports and **Settings → Import & export → Save backup…** work the same way.
+
 ## Backups
 
 The **JSON backup** is the complete copy of a workspace. Restore it into a new workspace from

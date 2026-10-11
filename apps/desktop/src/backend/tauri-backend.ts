@@ -210,7 +210,10 @@ export class TauriBackend implements DesktopBackend {
     return call<void>('folder_reveal', { path });
   }
 
-  async saveFile(bytes: Uint8Array, options: { name: string; title: string; filter: string | null }) {
+  async saveFile(
+    bytes: Uint8Array,
+    options: { name: string; title: string; filter: string | null },
+  ) {
     const headers: Record<string, string> = {
       'x-tessera-name': options.name,
       'x-tessera-title': options.title,

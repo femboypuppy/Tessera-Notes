@@ -235,9 +235,7 @@ test.describe('the desktop app (Tauri mocked)', () => {
     await expect(page).toHaveURL(new RegExp(`/p/${pageId}$`));
   });
 
-  test('exports save through the native dialog and printing uses the webview', async ({
-    page,
-  }) => {
+  test('exports save through the native dialog and printing uses the webview', async ({ page }) => {
     // Webviews ignore downloads and (WKWebView) `window.print()`: neither may be used here.
     await page.addInitScript(() => {
       const state = window as unknown as { browserPrints: number };
@@ -292,6 +290,42 @@ test.describe('the desktop app (Tauri mocked)', () => {
     expect(
       await page.evaluate(() => (window as unknown as { browserPrints: number }).browserPrints),
     ).toBe(0);
+    expect(downloads).toEqual([]);
+  });
+
+  test('a database view exports its CSV through the native save dialog', async ({ page }) => {
+    const downloads: string[] = [];
+    page.on('download', (download) => downloads.push(download.suggestedFilename()));
+    await useDesktop(page);
+    await createDesktopWorkspace(page, 'Apollo research');
+    await page.getByRole('button', { name: 'New database', exact: true }).click();
+    const title = page.getByRole('textbox', { name: 'Page title' });
+    await expect(title).toBeFocused();
+    await expect(page.getByRole('grid')).toBeVisible({ timeout: 20_000 });
+    await title.fill('Crew');
+    await page.getByRole('grid').getByRole('button', { name: 'New', exact: true }).click();
+    const cell = page.getByRole('textbox', { name: /^Edit / });
+    await expect(cell).toBeFocused();
+    await cell.fill('Neil Armstrong');
+    await cell.press('Enter');
+    await expect(page.getByText('1 row', { exact: true })).toBeVisible();
+
+    const target = `${HOME}/Documents/Crew.csv`;
+    await queueSave(page, target);
+    await page.getByRole('button', { name: 'More database actions' }).click();
+    await page.getByRole('menuitem', { name: 'Export view as CSV' }).click();
+    await expect.poll(() => savedText(page, target)).toContain('Neil Armstrong');
+    expect((await fakeState(page)).saveDialogs).toEqual([
+      { title: 'Save as', name: 'Crew - Table.csv', filter: 'CSV file' },
+    ]);
+    await expect(page.getByText('Exported 1 rows')).toBeVisible();
+
+    // Cancelled: nothing written, and no "exported" toast.
+    await queueSave(page, null);
+    await page.getByRole('button', { name: 'More database actions' }).click();
+    await page.getByRole('menuitem', { name: 'Export view as CSV' }).click();
+    await expect.poll(async () => (await fakeState(page)).saveDialogs.length).toBe(2);
+    expect(Object.keys((await fakeState(page)).savedFiles)).toEqual([target]);
     expect(downloads).toEqual([]);
   });
 

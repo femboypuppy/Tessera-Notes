@@ -45,8 +45,9 @@ describe('saving and printing exports in the desktop app', () => {
     fakeTauri().queueSave('D:/Backups/Library.zip');
     const bytes = new Uint8Array([0x50, 0x4b, 0x03, 0x04, 0, 255, 128]);
     await saver.save({ name: 'Library.zip', data: new Blob([bytes]) });
-    const written = Uint8Array.from(atob(fakeTauri().state.savedFiles['D:/Backups/Library.zip'] ?? ''), (c) =>
-      c.charCodeAt(0),
+    const written = Uint8Array.from(
+      atob(fakeTauri().state.savedFiles['D:/Backups/Library.zip'] ?? ''),
+      (c) => c.charCodeAt(0),
     );
     expect([...written]).toEqual([...bytes]);
     expect(fakeTauri().state.saveDialogs[0]?.filter).toBe('ZIP file');

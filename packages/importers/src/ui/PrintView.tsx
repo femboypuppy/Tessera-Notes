@@ -187,7 +187,6 @@ export default function PrintView() {
     };
   }, [state, autoPrint, pageId, navigate, print]);
 
-
   let content;
   if (!page) {
     content = (
@@ -232,12 +231,7 @@ export default function PrintView() {
         <p className="min-w-0 flex-1 truncate text-center text-ui font-medium text-fg-muted">
           {t('printViewTitle')}
         </p>
-        <Button
-          variant="primary"
-          size="sm"
-          onClick={print}
-          disabled={state.kind !== 'ready'}
-        >
+        <Button variant="primary" size="sm" onClick={print} disabled={state.kind !== 'ready'}>
           <Printer aria-hidden="true" />
           {t('printAction')}
         </Button>
