@@ -254,8 +254,9 @@ other client and everything converged.
   A service worker belongs to the shell (see follow-ups). The e2e offline test therefore doesn't
   reload while offline.
 - Viewers can still type locally (see contract change 1); their changes never reach the server.
-- A page deleted permanently on another device leaves its local docs until the replicator meets the
-  server's tombstone for a dirty doc; clean orphans stay on disk (invisible, small).
+- A page deleted permanently on another device: each replication pass drops the local docs of every
+  page the workspace records as deleted for good (`deletedPageIds`, from `permanentlyDeletedPageIds`),
+  also when they have nothing to sync, and never a page that is only missing here (#10).
 - Version history covers pages, not database docs (no core helper replaces a database doc's
   structure as a new edit); the panel says so for databases.
 - Version previews use `DocPreview` (my read-only renderer), not the editor.
