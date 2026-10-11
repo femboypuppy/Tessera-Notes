@@ -16,6 +16,7 @@ import {
   TAURI_ASSET_STORE_ID,
   TAURI_CREDENTIAL_STORE_ID,
   TAURI_DOC_STORE_ID,
+  TAURI_FILE_SAVER_ID,
   TAURI_REGISTRY_ID,
 } from './constants';
 
@@ -56,7 +57,7 @@ const openFolderAction: OnboardingActionContribution = {
 
 /**
  * The desktop feature (`apps/web/src/features/desktop`). Inside Tauri it swaps in folder-based
- * storage and the OS keychain for sign-in tokens (priority 100) and, when a workspace opens, registers the workspace picker, quick
+ * storage, the OS keychain for sign-in tokens and native save and print for exports (priority 100) and, when a workspace opens, registers the workspace picker, quick
  * capture, Settings → Desktop, native menus and deep links. In a browser it's just `{ id }`.
  */
 export function createDesktopFeature(): FeatureModule {
@@ -82,6 +83,19 @@ export function createDesktopFeature(): FeatureModule {
             import('./runtime'),
           ]);
           return new KeychainCredentialStore(getBackend());
+        },
+      }),
+      defineService({
+        provides: 'fileSaver',
+        id: TAURI_FILE_SAVER_ID,
+        priority: SERVICE_PRIORITY.desktop,
+        isAvailable: () => isTauri(),
+        create: async () => {
+          const [{ TauriFileSaver }, { getBackend }] = await Promise.all([
+            import('./files/file-saver'),
+            import('./runtime'),
+          ]);
+          return new TauriFileSaver(getBackend());
         },
       }),
       defineService({

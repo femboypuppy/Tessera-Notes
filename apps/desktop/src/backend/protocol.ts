@@ -124,7 +124,11 @@ export const deepLinkSchema = z.object({
 });
 export type DeepLink = z.infer<typeof deepLinkSchema>;
 
-export const serverEntrySchema = z.object({ server: z.string(), savedAt: z.number() });
+/** A file written through the native save dialog (`file_save`). */
+export const savedFileSchema = z.object({ name: z.string(), path: z.string() });
+export type SavedFileInfo = z.infer<typeof savedFileSchema>;
+
+export const serverEntrySchema =z.object({ server: z.string(), savedAt: z.number() });
 export type ServerEntry = z.infer<typeof serverEntrySchema>;
 
 export const updateInfoSchema = z.object({

@@ -56,6 +56,40 @@ pub fn absolute_folder(value: &str) -> Result<PathBuf> {
     Ok(path)
 }
 
+/// The file name a save dialog suggests: separators, reserved and control characters become `-`,
+/// runs of whitespace one space, trailing dots and spaces go, at most 200 characters. It is only a
+/// suggestion (the user picks the real path), so it is cleaned rather than refused.
+pub fn suggested_file_name(value: &str) -> String {
+    let replaced: String = value
+        .chars()
+        .map(|c| {
+            if c.is_control() || matches!(c, '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|') {
+                '-'
+            } else {
+                c
+            }
+        })
+        .collect();
+    let collapsed = replaced.split_whitespace().collect::<Vec<_>>().join(" ");
+    let limited: String = collapsed.chars().take(200).collect();
+    let trimmed = limited.trim_end_matches(['.', ' ']);
+    if trimmed.is_empty() {
+        "export".to_string()
+    } else {
+        trimmed.to_string()
+    }
+}
+
+/// The extension of a file name (`zip` for `Notes.zip`), when it has a short, plain one.
+pub fn extension(name: &str) -> Option<&str> {
+    let (stem, ext) = name.rsplit_once('.')?;
+    (!stem.is_empty()
+        && !ext.is_empty()
+        && ext.len() <= 10
+        && ext.chars().all(|c| c.is_ascii_alphanumeric()))
+    .then_some(ext)
+}
+
 /// Joins a relative, `/`-separated path (from an exporter) under `root`, refusing anything that
 /// could escape it: `..`, absolute paths, drive letters, NUL, empty segments and reserved names.
 pub fn relative_under(root: &Path, relative: &str) -> Result<PathBuf> {
@@ -132,6 +166,27 @@ mod tests {
                 "{bad} should be rejected"
             );
         }
+    }
+
+    #[test]
+    fn cleans_suggested_file_names() {
+        assert_eq!(suggested_file_name("Launch plan.md"), "Launch plan.md");
+        assert_eq!(suggested_file_name("a/b\\c:d*?.zip"), "a-b-c-d--.zip");
+        assert_eq!(suggested_file_name("  two   spaces  .md"), "two spaces .md");
+        assert_eq!(suggested_file_name("dots..."), "dots");
+        assert_eq!(suggested_file_name("line\nbreak"), "line-break");
+        assert_eq!(suggested_file_name(""), "export");
+        assert_eq!(suggested_file_name(". ."), "export");
+        assert_eq!(suggested_file_name(&"é".repeat(300)).chars().count(), 200);
+    }
+
+    #[test]
+    fn reads_extensions() {
+        assert_eq!(extension("Library.zip"), Some("zip"));
+        assert_eq!(extension("a.b.html"), Some("html"));
+        assert_eq!(extension("README"), None);
+        assert_eq!(extension(".hidden"), None);
+        assert_eq!(extension("odd.ex t"), None);
     }
 
     #[test]

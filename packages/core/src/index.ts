@@ -40,6 +40,7 @@ export * from './schema/index';
 export * from './services/doc-store';
 export * from './services/asset-store';
 export * from './services/credential-store';
+export * from './services/file-saver';
 export * from './services/sync-provider';
 export * from './services/workspace-registry';
 export * from './services/search-index';

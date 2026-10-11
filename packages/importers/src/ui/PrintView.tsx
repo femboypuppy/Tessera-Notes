@@ -160,6 +160,18 @@ export default function PrintView() {
     };
   }, [title]);
 
+  const openPage = useCallback((target: string) => ctx.navigateTo(printPath(target)), [ctx]);
+  // The platform's print: `window.print()` in browsers, the webview's native print on the desktop.
+  const print = useCallback(() => {
+    ctx.services.fileSaver.print().catch((error: unknown) =>
+      ctx.toast({
+        variant: 'error',
+        title: t('printFailedToast'),
+        description: toError(error).message,
+      }),
+    );
+  }, [ctx]);
+
   useEffect(() => {
     if (state.kind !== 'ready' || !autoPrint || !pageId) return undefined;
     let cancelled = false;
@@ -167,15 +179,14 @@ export default function PrintView() {
       () => {
         if (cancelled) return;
         void navigate(printPath(pageId), { replace: true });
-        window.print();
+        print();
       },
     );
     return () => {
       cancelled = true;
     };
-  }, [state, autoPrint, pageId, navigate]);
+  }, [state, autoPrint, pageId, navigate, print]);
 
-  const openPage = useCallback((target: string) => ctx.navigateTo(printPath(target)), [ctx]);
 
   let content;
   if (!page) {
@@ -224,7 +235,7 @@ export default function PrintView() {
         <Button
           variant="primary"
           size="sm"
-          onClick={() => window.print()}
+          onClick={print}
           disabled={state.kind !== 'ready'}
         >
           <Printer aria-hidden="true" />

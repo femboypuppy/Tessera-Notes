@@ -17,6 +17,7 @@ import {
   prefsSchema,
   registryEntrySchema,
   registryItemSchema,
+  savedFileSchema,
   serverEntrySchema,
   updateInfoSchema,
   updateProgressSchema,
@@ -207,6 +208,23 @@ export class TauriBackend implements DesktopBackend {
 
   revealFolder(path: string) {
     return call<void>('folder_reveal', { path });
+  }
+
+  async saveFile(bytes: Uint8Array, options: { name: string; title: string; filter: string | null }) {
+    const headers: Record<string, string> = {
+      'x-tessera-name': options.name,
+      'x-tessera-title': options.title,
+    };
+    if (options.filter) headers['x-tessera-filter'] = options.filter;
+    const result = await callBinary('file_save', bytes, headers);
+    const parsed = savedFileSchema.nullable().safeParse(result);
+    if (!parsed.success)
+      throw toDesktopError({ code: 'internal', message: parsed.error.message }, 'file_save');
+    return parsed.data;
+  }
+
+  print() {
+    return call<void>('window_print');
   }
 
   attachWorkspace(workspaceId: string, path: string, name: string) {

@@ -34,6 +34,8 @@ export interface FakeTauriOptions {
   folders?: Record<string, FakeFolder>;
   /** Answers of the next native folder dialogs (null = cancelled). */
   pickFolder?: Array<string | null>;
+  /** Answers of the next native save dialogs: the chosen path (null = cancelled). */
+  saveFile?: Array<string | null>;
   /** Registry entries present at start. */
   registry?: Array<Record<string, unknown>>;
   update?: { configured: boolean; version?: string; notes?: string };
@@ -56,10 +58,18 @@ export interface FakeTauriHandle {
     mirror: Record<string, Record<string, string>>;
     secrets: Record<string, string>;
     pendingLinks: unknown[];
+    /** The native save dialogs shown: their title, suggested name and file-type filter. */
+    saveDialogs: Array<{ title: string; name: string; filter: string | null }>;
+    /** Files written through the save dialog, by path (base64). */
+    savedFiles: Record<string, string>;
+    /** How many times the webview's native print dialog opened. */
+    printed: number;
   };
   readonly calls: Array<{ cmd: string; args: unknown }>;
   emit(event: string, payload?: unknown): void;
   queuePick(path: string | null): void;
+  /** Answers the next native save dialog (null = cancelled). */
+  queueSave(path: string | null): void;
   addFolder(path: string, folder: FakeFolder): void;
   queueLink(link: { pageId: string; workspaceId?: string | null }): void;
   save(): void;
@@ -109,6 +119,10 @@ export function installFakeTauri(options: FakeTauriOptions = {}): void {
     servers: Array<{ server: string; savedAt: number }>;
     pendingLinks: Json[];
     quit: boolean;
+    saveQueue: Array<string | null>;
+    saveDialogs: Array<{ title: string; name: string; filter: string | null }>;
+    savedFiles: Record<string, string>;
+    printed: number;
   }
 
   const STORAGE_KEY = '__fakeTauriState';
@@ -147,6 +161,10 @@ export function installFakeTauri(options: FakeTauriOptions = {}): void {
     servers: [],
     pendingLinks: [],
     quit: false,
+    saveQueue: options.saveFile ?? [],
+    saveDialogs: [],
+    savedFiles: {},
+    printed: 0,
   });
 
   const load = (): State => {
@@ -314,14 +332,14 @@ export function installFakeTauri(options: FakeTauriOptions = {}): void {
     }
     return bytes.buffer;
   };
-  const sanitize = (name: string) => {
+  const sanitize = (name: string, fallback = 'Workspace') => {
     const cleaned = name
       // eslint-disable-next-line no-control-regex -- control characters are invalid in file names
       .replace(/[\u0000-\u001f/\\:*?"<>|]/g, '-')
       .replace(/\s+/g, ' ')
       .trim()
       .replace(/[. ]+$/, '');
-    return cleaned || 'Workspace';
+    return cleaned || fallback;
   };
   const sha256 = async (bytes: Uint8Array) => {
     const digest = await crypto.subtle.digest('SHA-256', bytes as Uint8Array<ArrayBuffer>);
@@ -488,6 +506,22 @@ export function installFakeTauri(options: FakeTauriOptions = {}): void {
     },
     folder_reveal: (args) => {
       state.revealed.push(String(args.path));
+      return null;
+    },
+    file_save: (_args, opts, payload) => {
+      const bytes = bytesOf(payload);
+      const name = sanitize(header(opts, 'x-tessera-name') ?? '', 'export');
+      const title = header(opts, 'x-tessera-title') ?? '';
+      const filter = header(opts, 'x-tessera-filter');
+      state.saveDialogs.push({ title, name, filter: filter || null });
+      const path = state.saveQueue.length ? state.saveQueue.shift() : null;
+      if (!path) return null;
+      if (!isAbsolute(path)) throw fail('invalid', 'the dialog returned a relative path');
+      state.savedFiles[norm(path)] = toBase64(bytes);
+      return { name: norm(path).split('/').pop() ?? name, path };
+    },
+    window_print: () => {
+      state.printed += 1;
       return null;
     },
     workspace_attach: (args) => {
@@ -759,6 +793,10 @@ export function installFakeTauri(options: FakeTauriOptions = {}): void {
     emit: emitLocal,
     queuePick(path) {
       state.pickQueue.push(path);
+      save();
+    },
+    queueSave(path) {
+      state.saveQueue.push(path);
       save();
     },
     addFolder(path, folder) {
