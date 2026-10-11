@@ -7,7 +7,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { parse } from 'yaml';
-import { loadWorkflows, type Workflow, type WorkflowJob } from './workflow';
+import { expandMatrix, jobNeeds, loadWorkflows, type Workflow, type WorkflowJob } from './workflow';
 
 const ROOT = path.resolve(import.meta.dirname, '..', '..', '..', '..');
 const WORKFLOWS = loadWorkflows(path.join(ROOT, '.github', 'workflows'));
@@ -86,6 +86,20 @@ describe('.github/workflows', () => {
         expect(job['timeout-minutes'], `${path.basename(workflow.file)} → ${id}`).toBeGreaterThan(
           0,
         );
+      }
+    }
+  });
+
+  it('gives step timeouts room inside their job timeout', () => {
+    // A step timeout at or above the job's never fires: the job's timeout cancels the run first.
+    for (const workflow of WORKFLOWS) {
+      for (const [id, job] of Object.entries(workflow.jobs)) {
+        for (const step of steps(job).filter((entry) => entry['timeout-minutes'] !== undefined)) {
+          expect(
+            step['timeout-minutes'],
+            `${path.basename(workflow.file)} → ${id} → ${step.name ?? step.uses ?? ''}`,
+          ).toBeLessThan(job['timeout-minutes'] ?? 360);
+        }
       }
     }
   });
@@ -197,12 +211,61 @@ describe('ci.yml', () => {
 });
 
 describe('docker.yml', () => {
+  const docker = byName('docker.yml');
+  const build = docker.jobs.build ?? {};
+  const merge = docker.jobs.merge ?? {};
+  const buildStep = steps(build).find((step) => step.uses?.startsWith('docker/build-push-action@'));
+  const createStep = steps(merge).find((step) =>
+    step.run?.includes('docker buildx imagetools create'),
+  );
+
   it('publishes ghcr.io/<owner>/tessera whatever the repository is called', () => {
     // The repository became Tessera-Notes; the image kept its name so docker commands keep working.
-    const job = byName('docker.yml').jobs.image ?? {};
-    const name = steps(job).find((step) => step.name === 'Image name');
-    expect(name?.env).toEqual({ OWNER: '${{ github.repository_owner }}' });
-    expect(name?.run).toContain('name=ghcr.io/${OWNER,,}/tessera');
+    for (const job of [build, merge]) {
+      const name = steps(job).find((step) => step.name === 'Image name');
+      expect(name?.env).toEqual({ OWNER: '${{ github.repository_owner }}' });
+      expect(name?.run).toContain('name=ghcr.io/${OWNER,,}/tessera');
+    }
+  });
+
+  it('builds each platform natively on its own runner, never under QEMU', () => {
+    // Under QEMU the arm64 install hung until the job's 60-minute timeout (#56).
+    expect(docker.text).not.toContain('setup-qemu-action');
+    expect(build['runs-on']).toBe('${{ matrix.runner }}');
+    expect(
+      expandMatrix(build.strategy?.matrix).map(({ platform, runner }) => ({ platform, runner })),
+    ).toEqual([
+      { platform: 'linux/amd64', runner: 'ubuntu-24.04' },
+      { platform: 'linux/arm64', runner: 'ubuntu-24.04-arm' },
+    ]);
+    expect(buildStep?.with?.platforms).toBe('${{ matrix.platform }}');
+  });
+
+  it('fails a stuck build within a step timeout, well before 15 minutes of the job', () => {
+    for (const step of [buildStep, createStep]) {
+      expect(step?.['timeout-minutes']).toBeGreaterThan(0);
+      expect(step?.['timeout-minutes']).toBeLessThanOrEqual(12);
+    }
+    expect(build['timeout-minutes']).toBeLessThanOrEqual(20);
+    expect(merge['timeout-minutes']).toBeLessThanOrEqual(10);
+  });
+
+  it('caches the layers of each platform in their own scope', () => {
+    expect(buildStep?.with?.['cache-from']).toBe('type=gha,scope=docker-${{ matrix.arch }}');
+    expect(buildStep?.with?.['cache-to']).toBe('type=gha,mode=max,scope=docker-${{ matrix.arch }}');
+  });
+
+  it('pushes each platform by digest, then tags one manifest list, only when asked to push', () => {
+    const outputs = String(buildStep?.with?.outputs);
+    expect(outputs).toContain('push-by-digest=true');
+    expect(outputs).toContain('push=${{ inputs.push == true }}');
+    expect(buildStep?.with?.provenance).toBe("${{ inputs.push == true && 'mode=max' || 'false' }}");
+    expect(buildStep?.with?.sbom).toBe('${{ inputs.push == true }}');
+    expect(jobNeeds(merge)).toEqual(['build']);
+    expect(merge.if).toBe('inputs.push == true');
+    const meta = steps(merge).find((step) => step.uses?.startsWith('docker/metadata-action@'));
+    expect(String(meta?.with?.tags)).toContain('type=semver,pattern={{version}}');
+    expect(steps(merge).indexOf(meta ?? {})).toBeLessThan(steps(merge).indexOf(createStep ?? {}));
   });
 });
 
