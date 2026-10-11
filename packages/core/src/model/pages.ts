@@ -19,7 +19,7 @@ import {
   type PageKind,
   type PageMeta,
 } from './page-meta';
-import { pagesMapOf } from './workspace-doc';
+import { deletedPagesMapOf, pagesMapOf } from './workspace-doc';
 
 /** Options accepted by every mutating helper. */
 export interface MutationOptions {
@@ -603,7 +603,12 @@ export function deletePagePermanently(
     if (!page) throw new NotFoundError('Page', id);
     removed = [page, ...index.descendants(id)];
     const pages = pagesMapOf(ws);
-    for (const entry of removed) pages.delete(entry.id);
+    const deleted = deletedPagesMapOf(ws);
+    const now = options.now ?? Date.now();
+    for (const entry of removed) {
+      pages.delete(entry.id);
+      deleted.set(entry.id, now);
+    }
   }, options.origin);
   return removed;
 }
@@ -619,16 +624,40 @@ export function emptyTrash(ws: Y.Doc, options: MutationOptions = {}): PageMeta[]
     });
     const seen = new Set<string>();
     const pages = pagesMapOf(ws);
+    const deleted = deletedPagesMapOf(ws);
+    const now = options.now ?? Date.now();
     for (const root of roots) {
       for (const entry of [root, ...index.descendants(root.id)]) {
         if (seen.has(entry.id)) continue;
         seen.add(entry.id);
         removed.push(entry);
         pages.delete(entry.id);
+        deleted.set(entry.id, now);
       }
     }
   }, options.origin);
   return removed;
+}
+
+/**
+ * The IDs of every page deleted permanently in this workspace, and not created again since. A
+ * page that is merely missing (not synced to this device yet) is never in it, so references to
+ * these IDs are safe to remove on any client.
+ *
+ * Deletions are read from the `deletedPages` record, and from the tombstones Yjs keeps for each
+ * key removed from `pages`, which also covers deletions made before that record existed.
+ */
+export function permanentlyDeletedPageIds(ws: Y.Doc): Set<string> {
+  const pages = pagesMapOf(ws);
+  const ids = new Set<string>();
+  for (const id of deletedPagesMapOf(ws).keys()) {
+    if (!pages.has(id)) ids.add(id);
+  }
+  // `_map` holds the last item written under each key; it stays (deleted) after `delete(key)`.
+  for (const [id, item] of pages._map) {
+    if (item.deleted && !pages.has(id) && isValidId(id)) ids.add(id);
+  }
+  return ids;
 }
 
 /** Sorts pages the way siblings are displayed. */

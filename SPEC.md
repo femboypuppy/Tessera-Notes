@@ -150,6 +150,7 @@ server see.
 | `pages` | `Y.Map<pageId, Y.Map<field, value>>` | One nested map per page, so concurrent edits to different fields of the same page merge. |
 | `settings` | `Y.Map<key, JsonValue>` | Workspace settings shared with collaborators (`ctx.settings.workspace`). |
 | `meta` | `Y.Map` | `schemaVersion` (`DATA_MODEL_VERSION`, currently 1) and `createdAt`, written once by `initWorkspaceDoc`. |
+| `deletedPages` | `Y.Map<pageId, number>` | Every page deleted permanently (`deletePagePermanently`, `emptyTrash`), with the time. `permanentlyDeletedPageIds(ws)` reads it, plus the tombstones of keys removed from `pages` (deletions made before the record existed), minus pages that exist again. A page that is only missing on this device (not synced yet) is never in it, so any client may remove references to these IDs. |
 
 **`PageMeta`** (one entry of `pages`):
 

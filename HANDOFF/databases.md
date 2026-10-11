@@ -153,7 +153,8 @@ exports through `@tessera/db-views/query`)
 - `overlays`: `databases.overlays`: side peek, CSV import dialog, database picker.
 - `commands`: `databases.newDatabase`, `databases.importCsv`, `databases.exportCsv` (database pages
   only).
-- `activate`: on `page.deleted` (local only), removes dangling relation values; on
+- `activate`: on `page.deleted` (local or remote) and at startup, sweeps relation values that
+  point at permanently deleted pages (`sweepAfterDeletions`, when this device may write); on
   `database.changed`, refreshes the "Linked from" index; its cleanup resets the overlays.
 
 Also used: `ctx.workspace` (pages, `createDatabase`, `addDatabaseRow`, trash and restore),
@@ -191,7 +192,9 @@ event and `COMMANDS.focusTitle` (focus a new database's title), `ctx.navigate`.
    in a `Y.UndoManager` with a unique origin, so the toast's Undo reverts that action only, even
    after other edits. Deleting rows moves them to the trash (Undo restores them).
 9. **Relations**: two-way relations are written on both sides in one action. After a permanent
-   deletion only the client that deleted cleans up (the edits sync), so peers never race.
+   deletion any client that may write removes the references: the workspace records every
+   deletion (`deletedPages`, `permanentlyDeletedPageIds`), so a page that is only missing on a
+   device is never mistaken for a deleted one, and concurrent cleanups write the same result (#7).
    Trashed targets are hidden in cells and come back on restore, because their IDs are kept.
 10. **Active view per device** (`databases.view.<id>`), like a personal preference, rather than a
     synced setting: two people can look at different views of the same database page. Inline
@@ -443,9 +446,6 @@ No other core changes are needed.
 - Row hover buttons ("Open", row actions) are for the mouse; keyboard users have Alt+Enter (side
   peek), the context-menu key or Shift+F10 (row actions) and the header menu. On touch screens the
   buttons appear once a row is tapped.
-- Relation cleanup after a permanent deletion runs on the deleting client. If that client closes
-  in the few milliseconds before the cleanup runs, dangling IDs stay in the data; cells and
-  "Linked from" ignore pages that don't exist, so nothing shows.
 - Pressing Escape during a closing popover's exit animation (about 150 ms) reaches the closing
   popover (Radix keeps it mounted while it animates), so a second press is needed to close the
   next one.

@@ -7,6 +7,7 @@ import {
   createPages,
   deletePagePermanently,
   emptyTrash,
+  permanentlyDeletedPageIds,
   getAncestors,
   getChildren,
   getDescendants,
@@ -26,7 +27,7 @@ import {
   trashPage,
 } from './pages';
 import { observePages, type PagesChange } from './observe-pages';
-import { pagesMapOf } from './workspace-doc';
+import { deletedPagesMapOf, pagesMapOf } from './workspace-doc';
 
 function titles(pages: readonly { title: string }[]): string[] {
   return pages.map((page) => page.title);
@@ -353,6 +354,65 @@ describe('trash', () => {
     ).toEqual([b.id, b1.id].sort());
     expect(listPages(ws).map((page) => page.id)).toEqual([keep.id]);
     expect(() => deletePagePermanently(ws, 'missing')).toThrow(NotFoundError);
+  });
+});
+
+describe('permanentlyDeletedPageIds', () => {
+  it('lists every permanent deletion, on every device, and never a page that is only missing', () => {
+    const ws = new Y.Doc();
+    const a = createPage(ws, { title: 'A' });
+    const a1 = createPage(ws, { title: 'A1', parentId: a.id });
+    const b = createPage(ws, { title: 'B' });
+    const keep = createPage(ws, { title: 'Keep' });
+    deletePagePermanently(ws, a.id, { now: 7 });
+    trashPage(ws, b.id);
+    emptyTrash(ws, { now: 8 });
+    expect(permanentlyDeletedPageIds(ws)).toEqual(new Set([a.id, a1.id, b.id]));
+    expect(deletedPagesMapOf(ws).get(a.id)).toBe(7);
+
+    // Another device learns of the deletions through sync, the same way.
+    const other = new Y.Doc();
+    sync(ws, other);
+    expect(permanentlyDeletedPageIds(other)).toEqual(new Set([a.id, a1.id, b.id]));
+    expect(permanentlyDeletedPageIds(other).has(keep.id)).toBe(false);
+
+    // A page this device simply hasn't received yet isn't "deleted".
+    const late = new Y.Doc();
+    const fresh = createPage(late, { title: 'Not synced yet' });
+    expect(permanentlyDeletedPageIds(ws).has(fresh.id)).toBe(false);
+  });
+
+  it('finds deletions made before the deletion record existed, from their tombstones', () => {
+    const ws = new Y.Doc();
+    const old = createPage(ws, { title: 'Deleted by an older version' });
+    const kept = createPage(ws, { title: 'Kept' });
+    // What deletePagePermanently did before it recorded deletions.
+    ws.transact(() => pagesMapOf(ws).delete(old.id));
+    expect(deletedPagesMapOf(ws).size).toBe(0);
+
+    const restored = new Y.Doc();
+    Y.applyUpdate(restored, Y.encodeStateAsUpdate(ws));
+    expect(permanentlyDeletedPageIds(restored)).toEqual(new Set([old.id]));
+    expect(permanentlyDeletedPageIds(restored).has(kept.id)).toBe(false);
+  });
+
+  it('forgets a deletion once the page exists again', () => {
+    const ws = new Y.Doc();
+    const page = createPage(ws, { title: 'Back' });
+    const snapshot = Y.encodeStateAsUpdate(ws);
+    deletePagePermanently(ws, page.id);
+    expect(permanentlyDeletedPageIds(ws).has(page.id)).toBe(true);
+    // The same entry written again (for example restored from a backup into the map).
+    const copy = new Y.Doc();
+    Y.applyUpdate(copy, snapshot);
+    const entry = pagesMapOf(copy).get(page.id);
+    if (!(entry instanceof Y.Map)) throw new Error('expected the page entry');
+    ws.transact(() => {
+      const again = new Y.Map<unknown>();
+      for (const [key, value] of entry.entries()) again.set(key, value);
+      pagesMapOf(ws).set(page.id, again);
+    });
+    expect(permanentlyDeletedPageIds(ws).has(page.id)).toBe(false);
   });
 });
 

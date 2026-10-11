@@ -52,6 +52,7 @@ import {
   relationIds,
   removeDeletedFromRelations,
   setRelationValue,
+  sweepDeletedFromRelations,
   unlinkTwoWay,
 } from './relations';
 import { acquireDatabaseStore } from './store';
@@ -410,6 +411,33 @@ describe('two-way relations', () => {
     // Deleting the target database makes the relation one-way.
     await removeDeletedFromRelations(app.ctx, new Set([projects.id]), new Set([projects.id]));
     expect(getProperty(tasks.doc, project.id)?.relation?.backPropertyId).toBeNull();
+  });
+
+  it('removes pages deleted earlier whose cleanup never ran, but never pages that are only missing', async () => {
+    const tasks = await database('Tasks');
+    const projects = await database('Projects');
+    const project = addDatabaseProperty(tasks, {
+      type: 'relation',
+      name: 'Project',
+      relationTarget: projects.id,
+    });
+    const apollo = await addRow(app.ctx, projects, { title: 'Apollo' });
+    const gemini = await addRow(app.ctx, projects, { title: 'Gemini' });
+    const launch = await addRow(app.ctx, tasks, { title: 'Launch' });
+    // A page another device created that this device hasn't received yet.
+    const notSyncedYet = 'notsyncedyet0000000001';
+    setRowValue(tasks.doc, launch.id, project.id, [apollo.id, gemini.id, notSyncedYet]);
+
+    // Deleted, and the tab closed before the cleanup ran: the ID dangles.
+    await app.ctx.workspace.deletePagePermanently(gemini.id);
+    expect(relationIds(getRow(tasks.doc, launch.id)?.values[project.id])).toContain(gemini.id);
+
+    // The next sweep (on any client, at startup or after any deletion) removes it.
+    expect(await sweepDeletedFromRelations(app.ctx)).toBe(1);
+    expect(relationIds(getRow(tasks.doc, launch.id)?.values[project.id])).toEqual([
+      apollo.id,
+      notSyncedYet,
+    ]);
   });
 
   it('unlinks both sides and deleting a two-way property unlinks the other side', async () => {
