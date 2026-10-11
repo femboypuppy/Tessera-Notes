@@ -31,7 +31,14 @@ export interface Device {
 
 export async function createDevice(
   t: Pick<TestServer, 'url'>,
-  options: { name: string; token: string; workspaceId: string; indexedDB?: IDBFactory },
+  options: {
+    name: string;
+    token: string;
+    workspaceId: string;
+    indexedDB?: IDBFactory;
+    /** Pages the device's workspace doc records as deleted for good (none by default). */
+    deletedPageIds?: () => ReadonlySet<string>;
+  },
 ): Promise<Device> {
   const { workspaceId, token } = options;
   const indexedDB = options.indexedDB ?? new IDBFactory();
@@ -68,9 +75,13 @@ export async function createDevice(
     docStore: store,
     syncState,
     pageExists: () => true,
+    deletedPageIds: options.deletedPageIds ?? (() => new Set()),
     intervalMs: 60_000,
     docTimeoutMs: 10_000,
     onPulled: (docName) => pulled.push(docName),
+    onDeletedOnServer: async (docName) => {
+      if (!provider.isOpen(docName)) await store.delete(docName);
+    },
   });
   replicator.start();
   // The workspace doc is always open in the app; its connection authorizes the workspace.

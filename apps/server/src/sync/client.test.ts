@@ -246,6 +246,46 @@ describe('HocuspocusSyncProvider with the runtime DocManager', () => {
     );
     await eventually(async () => expect(await laptop.syncState.outbox()).toEqual([]));
   });
+
+  it('drops the local copies of pages deleted for good on another device', async () => {
+    const t = await server();
+    const { ownerToken, workspaceId } = await bootstrap(t);
+    const laptop = await device(t, { name: 'laptop', token: ownerToken, workspaceId });
+    for (const name of ['page:doomed', 'page:keeper']) {
+      const page = await laptop.open(name);
+      page.doc.getText('t').insert(0, name);
+      await laptop.settled();
+      page.release();
+    }
+    // What the phone's workspace doc says was deleted permanently.
+    const deleted = new Set<string>();
+    const phone = await device(t, {
+      name: 'phone',
+      token: ownerToken,
+      workspaceId,
+      deletedPageIds: () => deleted,
+    });
+    await eventually(async () => {
+      expect(await storedText(phone, 'page:doomed')).toBe('page:doomed');
+      expect(await storedText(phone, 'page:keeper')).toBe('page:keeper');
+    }, 10_000);
+    await phone.settled();
+
+    // The laptop deletes the page for good; the phone has nothing to upload or pull for it.
+    await laptop.syncState.enqueue({ kind: 'deleteDoc', docName: 'page:doomed' });
+    await laptop.replicator.runNow();
+    await eventually(
+      () => expect(t.server.services.persistence.isDeleted(workspaceId, 'page:doomed')).toBe(true),
+      10_000,
+    );
+    deleted.add('doomed');
+    await phone.replicator.runNow();
+
+    expect(await phone.store.list()).not.toContain('page:doomed');
+    expect((await phone.syncState.all()).has('page:doomed')).toBe(false);
+    // A page that isn't recorded as deleted stays, even if this device knows nothing else of it.
+    expect(await storedText(phone, 'page:keeper')).toBe('page:keeper');
+  });
 });
 
 describe('SyncSocket', () => {

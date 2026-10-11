@@ -35,14 +35,20 @@ export interface ReplicatorOptions {
   assets?: Pick<AssetStore, 'get' | 'getInfo'>;
   /** Whether a page (or database) still exists in the workspace (deleted ones aren't fetched). */
   pageExists(pageId: string): boolean;
+  /**
+   * Pages the workspace records as deleted for good (`permanentlyDeletedPageIds`). Their docs are
+   * dropped from this device on every pass, also when they have nothing to sync: a page deleted on
+   * another device would otherwise stay here for good. Never a page that is only missing here.
+   */
+  deletedPageIds?(): ReadonlySet<string>;
   concurrency?: number;
   /** Full pass interval while connected. Default 5 minutes. */
   intervalMs?: number;
   /** Give up on one doc after this long (retried next pass). Default 60 s. */
   docTimeoutMs?: number;
   onProblem?(problem: ReplicatorProblem): void;
-  /** A doc the server deleted for good (someone deleted the page): drop the local copy. */
-  onDeletedOnServer?(docName: string): void;
+  /** A doc deleted for good (someone deleted the page, here or elsewhere): drop the local copy. */
+  onDeletedOnServer?(docName: string): void | Promise<void>;
   /**
    * A closed doc received the server's changes, now in the doc store. Nothing else sees them
    * (no live doc, no `doc.changed`), so indexes re-read it from here.
@@ -151,6 +157,8 @@ export class BackgroundReplicator {
       docStore.list(),
     ]);
     const local = new Set(localNames);
+    await this.dropDeleted(localNames, states);
+    if (this.stopped) return;
     const seqs = new Map(serverDocs.map((doc) => [doc.name, doc.seq]));
     const wsDoc = workspaceDocName(workspaceId);
     const wanted = (name: string): boolean => {
@@ -192,6 +200,24 @@ export class BackgroundReplicator {
     };
     const workers = Array.from({ length: this.options.concurrency ?? 3 }, () => worker());
     await Promise.all(workers);
+  }
+
+  /** Forgets the local docs (and sync records) of pages deleted for good. */
+  private async dropDeleted(
+    localNames: readonly string[],
+    states: ReadonlyMap<string, SyncStateRecord>,
+  ): Promise<void> {
+    const deleted = this.options.deletedPageIds?.();
+    if (!deleted?.size) return;
+    const { provider, syncState } = this.options;
+    for (const docName of new Set([...localNames, ...states.keys()])) {
+      const parsed = parseDocName(docName);
+      if (!parsed || parsed.kind === 'workspace' || !deleted.has(parsed.id)) continue;
+      // An open doc is someone's live editor: the next pass after it closes drops it.
+      if (provider.isOpen(docName)) continue;
+      if (states.has(docName)) await syncState.remove(docName);
+      await this.options.onDeletedOnServer?.(docName);
+    }
   }
 
   private async syncDoc(
@@ -252,7 +278,7 @@ export class BackgroundReplicator {
     if (outcome === 'ok') await syncState.markSynced(docName, observed, serverSeq);
     else if (outcome === 'deleted') {
       await syncState.remove(docName);
-      this.options.onDeletedOnServer?.(docName);
+      await this.options.onDeletedOnServer?.(docName);
     }
   }
 

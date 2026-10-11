@@ -2,6 +2,7 @@ import {
   databaseDocName,
   pageDocName,
   parseDocName,
+  permanentlyDeletedPageIds,
   SETTING_KEYS,
   type AppContext,
 } from '@tessera/core';
@@ -48,6 +49,8 @@ export async function startServerSync(
     syncState,
     assets: ctx.services.assetStore,
     pageExists: (pageId) => ctx.workspace.pages.getSnapshot().get(pageId) !== undefined,
+    // Pages deleted for good, here or on another device: their local docs are dropped.
+    deletedPageIds: () => permanentlyDeletedPageIds(ctx.workspace.doc),
     onProblem: (problem) =>
       ctx.toast({
         variant: 'warning',
@@ -60,8 +63,8 @@ export async function startServerSync(
         description: problem.message,
         durationMs: 10_000,
       }),
-    onDeletedOnServer: (docName) => {
-      if (!provider.isOpen(docName)) void docStore.delete(docName);
+    onDeletedOnServer: async (docName) => {
+      if (!provider.isOpen(docName)) await docStore.delete(docName);
     },
     // A page or database pulled in the background: search and backlinks re-read it.
     onPulled: (docName) => {

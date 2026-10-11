@@ -5,6 +5,7 @@ import {
 } from 'radix-ui';
 import type { ComponentProps, ReactNode } from 'react';
 import { cn } from '../lib/cn';
+import { useEscapePastClosingLayer } from '../lib/escape';
 import { KeyCombo } from './feedback';
 
 const content =
@@ -56,14 +57,19 @@ export const DropdownMenuRadioGroup = DropdownMenuPrimitive.RadioGroup;
 export function DropdownMenuContent({
   className,
   sideOffset = 6,
+  ref,
+  onEscapeKeyDown,
   ...props
 }: ComponentProps<typeof DropdownMenuPrimitive.Content>) {
+  const escape = useEscapePastClosingLayer(onEscapeKeyDown, ref);
   return (
     <DropdownMenuPrimitive.Portal>
       <DropdownMenuPrimitive.Content
         sideOffset={sideOffset}
         className={cn(content, className)}
         {...props}
+        ref={escape.ref}
+        onEscapeKeyDown={escape.onEscapeKeyDown}
       />
     </DropdownMenuPrimitive.Portal>
   );
@@ -163,11 +169,19 @@ export function DropdownMenuSubTrigger({
 
 export function DropdownMenuSubContent({
   className,
+  ref,
+  onEscapeKeyDown,
   ...props
 }: ComponentProps<typeof DropdownMenuPrimitive.SubContent>) {
+  const escape = useEscapePastClosingLayer(onEscapeKeyDown, ref);
   return (
     <DropdownMenuPrimitive.Portal>
-      <DropdownMenuPrimitive.SubContent className={cn(content, className)} {...props} />
+      <DropdownMenuPrimitive.SubContent
+        className={cn(content, className)}
+        {...props}
+        ref={escape.ref}
+        onEscapeKeyDown={escape.onEscapeKeyDown}
+      />
     </DropdownMenuPrimitive.Portal>
   );
 }
@@ -184,11 +198,19 @@ export const ContextMenuSub = ContextMenuPrimitive.Sub;
 /** A right-click (long-press on touch) menu. Same item API as the dropdown menu. */
 export function ContextMenuContent({
   className,
+  ref,
+  onEscapeKeyDown,
   ...props
 }: ComponentProps<typeof ContextMenuPrimitive.Content>) {
+  const escape = useEscapePastClosingLayer(onEscapeKeyDown, ref);
   return (
     <ContextMenuPrimitive.Portal>
-      <ContextMenuPrimitive.Content className={cn(content, className)} {...props} />
+      <ContextMenuPrimitive.Content
+        className={cn(content, className)}
+        {...props}
+        ref={escape.ref}
+        onEscapeKeyDown={escape.onEscapeKeyDown}
+      />
     </ContextMenuPrimitive.Portal>
   );
 }
@@ -257,11 +279,19 @@ export function ContextMenuSubTrigger({
 
 export function ContextMenuSubContent({
   className,
+  ref,
+  onEscapeKeyDown,
   ...props
 }: ComponentProps<typeof ContextMenuPrimitive.SubContent>) {
+  const escape = useEscapePastClosingLayer(onEscapeKeyDown, ref);
   return (
     <ContextMenuPrimitive.Portal>
-      <ContextMenuPrimitive.SubContent className={cn(content, className)} {...props} />
+      <ContextMenuPrimitive.SubContent
+        className={cn(content, className)}
+        {...props}
+        ref={escape.ref}
+        onEscapeKeyDown={escape.onEscapeKeyDown}
+      />
     </ContextMenuPrimitive.Portal>
   );
 }
