@@ -1,13 +1,22 @@
 import {
+  createAppRuntime,
   listRows,
   listViews,
+  LocalSyncProvider,
+  MemorySettingsStore,
   type BlockRendererProps,
   type EmbedInsert,
+  type FeatureModule,
   type JsonValue,
+  type SyncStatusInfo,
 } from '@tessera/core';
 import { AppContextProvider } from '@tessera/core/react';
 import { TooltipProvider } from '@tessera/ui';
-import { createTestAppContext, type TestAppContext } from '@tessera/core/testing';
+import {
+  createRecordingShell,
+  createTestAppContext,
+  type TestAppContext,
+} from '@tessera/core/testing';
 import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { Suspense, useState } from 'react';
@@ -166,4 +175,91 @@ describe('databases feature', () => {
     });
     handle.release();
   });
+
+  it(
+    'waits until this device may write, and finishes a cleanup that never ran at the next start',
+    { timeout: 60_000 },
+    async () => {
+      // A sync connection the test controls (a viewer's, then an editor's).
+      let status: SyncStatusInfo = { status: 'synced', readOnly: true };
+      const listeners = new Set<(info: SyncStatusInfo) => void>();
+      const setStatus = (next: SyncStatusInfo) => {
+        status = next;
+        for (const listener of listeners) listener(next);
+      };
+      class TestSyncProvider extends LocalSyncProvider {
+        override getStatus(): SyncStatusInfo {
+          return status;
+        }
+        override onStatus(listener: (info: SyncStatusInfo) => void): () => void {
+          listeners.add(listener);
+          return () => listeners.delete(listener);
+        }
+      }
+      const testSync: FeatureModule = {
+        id: 'test-sync',
+        services: [
+          {
+            provides: 'syncProvider',
+            id: 'test',
+            priority: 1_000,
+            create: () => new TestSyncProvider(),
+          },
+        ],
+      };
+      const runtime = await createAppRuntime({
+        features: [databasesFeature, testSync],
+        deviceSettings: new MemorySettingsStore(),
+        releaseDelayMs: 0,
+        docChangeDebounceMs: 0,
+        touchDebounceMs: 0,
+      });
+      const workspace = await runtime.workspaceRegistry.create({ name: 'Relations' });
+      await runtime.workspaceRegistry.open(workspace.id);
+      try {
+        const first = await runtime.openWorkspace(workspace, createRecordingShell());
+        const { ctx } = first;
+        const { createDatabase, addDatabaseProperty, addRow, setCell } =
+          await import('@tessera/db-views/operations');
+        const { page: tasks } = await createDatabase(ctx, { title: 'Tasks' });
+        const ada = ctx.workspace.createPage({ title: 'Ada' });
+        const grace = ctx.workspace.createPage({ title: 'Grace' });
+        const handle = await ctx.loadDatabaseDoc(tasks.id);
+        const ref = { id: tasks.id, doc: handle.doc };
+        const owner = addDatabaseProperty(ref, { type: 'relation', name: 'Owner' });
+        const row = await addRow(ctx, ref, { title: 'Write the brief' });
+        await setCell(ctx, ref, row.id, owner, [ada.id, grace.id]);
+        const owners = () => listRows(handle.doc)[0]?.values[owner.id] ?? [];
+
+        // A read-only connection never writes: the IDs stay until an editor's connection.
+        await ctx.workspace.deletePagePermanently(ada.id);
+        await first.flush();
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        expect(owners()).toEqual([ada.id, grace.id]);
+        setStatus({ status: 'synced' });
+        await waitFor(() => expect(owners()).toEqual([grace.id]), { timeout: 10_000 });
+
+        // Offline, then the session closes before anything cleaned up after this deletion.
+        setStatus({ status: 'offline' });
+        await ctx.workspace.deletePagePermanently(grace.id);
+        await first.flush();
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        expect(owners()).toEqual([grace.id]);
+        handle.release();
+        await first.close();
+
+        // The next start finishes it.
+        setStatus({ status: 'synced' });
+        const second = await runtime.openWorkspace(workspace, createRecordingShell());
+        const reopened = await second.ctx.loadDatabaseDoc(tasks.id);
+        await waitFor(() => expect(listRows(reopened.doc)[0]?.values[owner.id] ?? []).toEqual([]), {
+          timeout: 10_000,
+        });
+        reopened.release();
+        await second.close();
+      } finally {
+        await runtime.dispose();
+      }
+    },
+  );
 });
