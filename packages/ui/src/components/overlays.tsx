@@ -9,6 +9,7 @@ import {
 import { useRef, type ComponentProps, type ReactNode } from 'react';
 import { tUi } from '../i18n/index';
 import { cn } from '../lib/cn';
+import { useEscapePastClosingLayer } from '../lib/escape';
 import { buttonVariants } from './button-variants';
 import { KeyCombo } from './feedback';
 
@@ -88,8 +89,11 @@ export function PopoverContent({
   className,
   sideOffset = 6,
   align = 'start',
+  ref,
+  onEscapeKeyDown,
   ...props
 }: ComponentProps<typeof PopoverPrimitive.Content>) {
+  const escape = useEscapePastClosingLayer(onEscapeKeyDown, ref);
   return (
     <PopoverPrimitive.Portal>
       <PopoverPrimitive.Content
@@ -97,6 +101,8 @@ export function PopoverContent({
         align={align}
         className={cn(floating, 'p-2', className)}
         {...props}
+        ref={escape.ref}
+        onEscapeKeyDown={escape.onEscapeKeyDown}
       />
     </PopoverPrimitive.Portal>
   );
@@ -109,14 +115,19 @@ export const HoverCardTrigger = HoverCardPrimitive.Trigger;
 export function HoverCardContent({
   className,
   sideOffset = 8,
+  ref,
+  onEscapeKeyDown,
   ...props
 }: ComponentProps<typeof HoverCardPrimitive.Content>) {
+  const escape = useEscapePastClosingLayer(onEscapeKeyDown, ref);
   return (
     <HoverCardPrimitive.Portal>
       <HoverCardPrimitive.Content
         sideOffset={sideOffset}
         className={cn(floating, 'w-80 p-3', className)}
         {...props}
+        ref={escape.ref}
+        onEscapeKeyDown={escape.onEscapeKeyDown}
       />
     </HoverCardPrimitive.Portal>
   );
@@ -158,12 +169,15 @@ export function DialogContent({
   children,
   showClose = true,
   size = 'md',
+  ref,
+  onEscapeKeyDown,
   ...props
 }: ComponentProps<typeof DialogPrimitive.Content> & {
   showClose?: boolean;
   size?: 'sm' | 'md' | 'lg' | 'xl';
 }) {
   const width = { sm: 'max-w-sm', md: 'max-w-lg', lg: 'max-w-2xl', xl: 'max-w-4xl' }[size];
+  const escape = useEscapePastClosingLayer(onEscapeKeyDown, ref);
   return (
     <DialogPrimitive.Portal>
       <Overlay />
@@ -174,6 +188,8 @@ export function DialogContent({
           className,
         )}
         {...props}
+        ref={escape.ref}
+        onEscapeKeyDown={escape.onEscapeKeyDown}
       >
         {children}
         {showClose ? (
@@ -253,9 +269,12 @@ export function SheetContent({
   children,
   onOpenAutoFocus,
   onCloseAutoFocus,
+  ref,
+  onEscapeKeyDown,
   ...props
 }: ComponentProps<typeof DialogPrimitive.Content> & { side?: 'left' | 'right'; title: string }) {
   const opener = useRef<HTMLElement | null>(null);
+  const escape = useEscapePastClosingLayer(onEscapeKeyDown, ref);
   return (
     <DialogPrimitive.Portal>
       <Overlay />
@@ -283,6 +302,8 @@ export function SheetContent({
           className,
         )}
         {...props}
+        ref={escape.ref}
+        onEscapeKeyDown={escape.onEscapeKeyDown}
       >
         <DialogPrimitive.Title className="sr-only">{title}</DialogPrimitive.Title>
         {children}
@@ -302,8 +323,11 @@ export const AlertDialogTrigger = AlertDialogPrimitive.Trigger;
 export function AlertDialogContent({
   className,
   children,
+  ref,
+  onEscapeKeyDown,
   ...props
 }: ComponentProps<typeof AlertDialogPrimitive.Content>) {
+  const escape = useEscapePastClosingLayer(onEscapeKeyDown, ref);
   return (
     <AlertDialogPrimitive.Portal>
       <AlertDialogPrimitive.Overlay className="fixed inset-0 z-[var(--tess-z-overlay)] bg-overlay data-[state=closed]:animate-fade-out data-[state=open]:animate-fade-in" />
@@ -313,6 +337,8 @@ export function AlertDialogContent({
           className,
         )}
         {...props}
+        ref={escape.ref}
+        onEscapeKeyDown={escape.onEscapeKeyDown}
       >
         {children}
       </AlertDialogPrimitive.Content>

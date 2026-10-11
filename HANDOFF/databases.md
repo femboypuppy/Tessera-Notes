@@ -446,9 +446,6 @@ No other core changes are needed.
 - Row hover buttons ("Open", row actions) are for the mouse; keyboard users have Alt+Enter (side
   peek), the context-menu key or Shift+F10 (row actions) and the header menu. On touch screens the
   buttons appear once a row is tapped.
-- Pressing Escape during a closing popover's exit animation (about 150 ms) reaches the closing
-  popover (Radix keeps it mounted while it animates), so a second press is needed to close the
-  next one.
 
 ## Follow-ups for the merge (cross-agent wiring you couldn't finish alone)
 
