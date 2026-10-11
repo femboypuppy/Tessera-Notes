@@ -296,6 +296,15 @@ function finalizeBreaks(children: PhrasingContent[]): void {
   });
 }
 
+/** Every hard break as `<br>`, for spans that must stay on one line (callout titles). */
+function breaksAsHtml(children: PhrasingContent[]): PhrasingContent[] {
+  children.forEach((node, index) => {
+    if ('children' in node) breaksAsHtml(node.children as PhrasingContent[]);
+    if (node.type === 'break') children[index] = { type: 'html', value: '<br>' };
+  });
+  return children;
+}
+
 // ---------------------------------------------------------------------------------------------
 // Blocks
 // ---------------------------------------------------------------------------------------------
@@ -419,12 +428,16 @@ function calloutNode(node: AnyNodeJSON, ctx: Context): Flow[] {
     }
   }
   if (body.length === 1 && isEmptyParagraph(body[0])) body = [];
+  // The title is the marker's line: a line ending would end it, so breaks are written as `<br>`.
   const header: Paragraph = {
     type: 'paragraph',
     children: [
       { type: 'calloutMarker', value: marker },
       ...(title.length
-        ? [{ type: 'text', value: ' ' } as PhrasingContent, ...inlineToMdast(title, ctx)]
+        ? [
+            { type: 'text', value: ' ' } as PhrasingContent,
+            ...breaksAsHtml(inlineToMdast(title, ctx)),
+          ]
         : []),
     ],
   };
