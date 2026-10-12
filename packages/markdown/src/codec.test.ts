@@ -427,6 +427,54 @@ describe('serialize', () => {
     }
   });
 
+  it('keeps line breaks in callout titles, folded or not (#87)', () => {
+    const title = [
+      { type: 'text', text: 'Fuel low' },
+      { type: 'hardBreak' },
+      { type: 'text', text: 'check the gauges' },
+    ];
+    const folded = doc([
+      {
+        type: 'callout',
+        attrs: { tone: 'warning', emoji: '⚠️' },
+        content: [
+          {
+            type: 'toggle',
+            attrs: { open: false },
+            content: [
+              { type: 'toggleSummary', content: title },
+              { type: 'paragraph', content: [{ type: 'text', text: 'Abort below 10%.' }] },
+            ],
+          },
+        ],
+      },
+    ]);
+    const markdown = codec.serialize(folded);
+    expect(markdown).toBe('> [!warning]- Fuel low<br>check the gauges\n>\n> Abort below 10%.\n');
+    expect(blocks(markdown)[0]?.content?.[0]?.content).toMatchObject([
+      { type: 'toggleSummary', content: title },
+      { type: 'paragraph', content: [{ type: 'text', text: 'Abort below 10%.' }] },
+    ]);
+
+    const bold = title.map((node) =>
+      node.type === 'text' ? { ...node, marks: [{ type: 'bold' }] } : node,
+    );
+    const plain = doc([
+      {
+        type: 'callout',
+        attrs: { tone: 'warning', emoji: '⚠️' },
+        content: [
+          { type: 'paragraph', content: bold },
+          { type: 'paragraph', content: [{ type: 'text', text: 'Abort below 10%.' }] },
+        ],
+      },
+    ]);
+    expect(blocks(codec.serialize(plain))[0]?.content).toMatchObject([
+      { type: 'paragraph', content: bold },
+      { type: 'paragraph', content: [{ type: 'text', text: 'Abort below 10%.' }] },
+    ]);
+  });
+
   it('writes only the block IDs keepBlockId accepts', () => {
     const blocks = doc([
       {
