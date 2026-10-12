@@ -244,6 +244,42 @@ describe('workspace session', () => {
     await desktop.dispose();
   });
 
+  it('saves files through a download link unless a platform provides a file saver', async () => {
+    const { ctx, runtime, dispose } = await createTestAppContext();
+    expect(ctx.serviceSources.fileSaver).toBe('download');
+    expect(runtime.fileSaver).toBe(ctx.services.fileSaver);
+    expect(ctx.services.fileSaver.mode).toBe('download');
+    // Outside a browser there is nowhere to download to.
+    await expect(
+      ctx.services.fileSaver.save({ name: 'Notes.md', data: new Blob(['x']) }),
+    ).rejects.toThrow(/browser/);
+    await dispose();
+
+    const native = {
+      mode: 'dialog' as const,
+      save: vi.fn(async () => ({ name: 'Notes.md', path: '/home/ada/Notes.md' })),
+      print: vi.fn(async () => undefined),
+    };
+    const desktop = await createTestAppContext({
+      features: [
+        defineFeature({
+          id: 'desktop',
+          services: [
+            defineService({
+              provides: 'fileSaver',
+              id: 'native-dialog',
+              priority: SERVICE_PRIORITY.desktop,
+              create: () => native,
+            }) as AnyServiceRegistration,
+          ],
+        }),
+      ],
+    });
+    expect(desktop.ctx.serviceSources.fileSaver).toBe('native-dialog');
+    expect(desktop.ctx.services.fileSaver).toBe(native);
+    await desktop.dispose();
+  });
+
   it('deletes pages permanently with their docs and row entries', async () => {
     const { ctx, flush, runtime, dispose } = await createTestAppContext();
     const seen = record(ctx);
@@ -281,6 +317,7 @@ describe('workspace session', () => {
       workspaceRegistry: 'memory',
       markdownCodec: 'basic',
       credentialStore: 'memory',
+      fileSaver: 'download',
     });
     await dispose();
   });

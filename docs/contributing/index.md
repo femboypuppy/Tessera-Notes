@@ -17,6 +17,10 @@ pnpm install
 pnpm dev
 ```
 
+On Windows, clone into a short folder such as `C:\src`, or run
+`git config --global core.longpaths true` first: some test fixtures keep Notion's long file names,
+and Git for Windows refuses paths over 260 characters.
+
 ## Everyday commands
 
 | Command            | Does                                                 |

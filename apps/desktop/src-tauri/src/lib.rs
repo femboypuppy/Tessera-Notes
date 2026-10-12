@@ -216,6 +216,8 @@ pub fn run() {
             commands::folder_suggest,
             commands::folder_pick,
             commands::folder_reveal,
+            commands::file_save,
+            commands::window_print,
             commands::workspace_attach,
             commands::workspace_detach,
             commands::workspace_status,

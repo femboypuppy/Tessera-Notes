@@ -336,9 +336,9 @@ flag, or `register(item, { replace: true })`). Not required; noted so nobody cha
 - **The Notion fixture is flatter than real exports** on disk: Windows' path length limit broke
   git checkouts of the deepest folders, so the test builds a deep `Stage one → four` chain inside
   a generated zip instead.
-- **Downloads and printing in the desktop app**: the export dialog downloads through an
-  `<a download>` link and the PDF through `window.print()`; both depend on the webview (see
-  follow-ups).
+- **Downloads and printing in the desktop app** go through the `fileSaver` service (#30): the
+  browser stub downloads through a link and prints with `window.print()`; the desktop app saves
+  through the native save dialog (`file_save`) and prints through the webview (`window_print`).
 - In this branch the editor does not exist yet, so an imported page's body shows the shell's
   placeholder; the imported content is visible in the print view (Export → PDF).
 

@@ -139,8 +139,8 @@ the 45 s test timeout). A failure is re-run alone before it counts as fixed or f
 - `AssetStore.getInfo` in the IndexedDB and server stores. ✅ Both implement it, and the desktop's.
 - The desktop mirror through the exporter. ✅ `MIRROR_EXPORTERS` picks `markdown`; Settings →
   Desktop shows "Updated now · 7 files" in the screenshot run.
-- Downloads and printing inside the desktop webview. ➡️ Issue "Desktop: export downloads and
-  printing in the webview".
+- Downloads and printing inside the desktop webview. ✅ In 0.1.3 (#30), through the `fileSaver`
+  service: the native save dialog and the webview's own print.
 - "Open demo workspace" from `examples/demo-workspace`; the bundled demo deleted. ✅ `demo.test.ts`
   (no import issues, 200+ links resolve, images in the asset store, typed databases).
 - Nightly 2,000-note benchmark. ➡️ Issue "CI: nightly performance and load jobs".
@@ -358,7 +358,7 @@ Xvfb, `CI=true`) and fixed at its cause; no budget, timeout or assertion was loo
   (microsoft/playwright#42731, fixed in 1.64, still an alpha). The Firefox project sets
   `browser.tabs.remote.useCrossOriginOpenerPolicy: false` (checked in the container: without it a
   COOP navigation clears `window.name`, with it the tab keeps its context). The app and the
-  server keep COOP. **Next:** drop the pref when upgrading to Playwright 1.64.
+  server keep COOP. ✅ Playwright 1.64 fixed it, and the pref is gone since 0.1.3 (#35).
 - **Timed specs measured the runner.** The 10,000-row table spec scrolled at 60 fps on one run
   and 30 fps on the next with the same code, and the 2,000-block typing p95 swung between 7 and
   25 ms in one run. A scrolled frame of that table costs about 33 ms of CPU across Chromium's

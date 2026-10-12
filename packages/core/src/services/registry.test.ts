@@ -131,6 +131,7 @@ describe('resolveService', () => {
       workspaceRegistry: 'app',
       markdownCodec: 'app',
       credentialStore: 'app',
+      fileSaver: 'app',
       docStore: 'storage',
       assetStore: 'storage',
       syncProvider: 'storage',

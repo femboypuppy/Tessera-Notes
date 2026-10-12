@@ -119,6 +119,7 @@ test('publishes diagnostics for tests and bug reports', async ({ page }) => {
     'assetStore',
     'credentialStore',
     'docStore',
+    'fileSaver',
     'linkIndex',
     'markdownCodec',
     'searchIndex',
