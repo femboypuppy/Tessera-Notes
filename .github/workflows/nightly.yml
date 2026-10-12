@@ -1,0 +1,163 @@
+# Nightly performance and load checks, too slow for every pull request (#33):
+#
+# - the server load test: 50 clients editing shared pages through the real sync server; fails on a
+#   lost delivery or when the clients and the server disagree at the end;
+# - importing 2,000 Obsidian notes, against the import budget;
+# - the search benchmark on 5,000 generated pages, against the query budget;
+# - the palette and the 10,000-node graph in Chromium, with the software WebGL renderer (the worst
+#   case, a machine without a GPU);
+# - the 10-minute memory soak, which fails when the heap trends upward.
+#
+# Each check keeps its report as an artifact, failed or not. Runners are noisy, so read a single
+# red night as a prompt to compare with the nights around it.
+name: Nightly
+
+on:
+  schedule:
+    - cron: '23 2 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nightly-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  load-test:
+    name: Server load test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Load test
+        run: |
+          set -o pipefail
+          mkdir -p reports
+          pnpm --filter @tessera/server load-test | tee reports/load-test.txt
+      - name: Upload the report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: load-test
+          path: reports/
+          if-no-files-found: ignore
+          retention-days: 30
+
+  benchmarks:
+    name: Import and search benchmarks
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Import 2,000 notes
+        env:
+          TESSERA_IMPORT_BENCH_NOTES: 2000
+        run: |
+          set -o pipefail
+          mkdir -p reports
+          pnpm --filter @tessera/importers exec vitest run src/performance.test.ts | tee reports/import.txt
+      - name: Search benchmark
+        if: ${{ !cancelled() }}
+        run: |
+          set -o pipefail
+          mkdir -p reports
+          pnpm --filter @tessera/search bench | tee reports/search.txt
+      - name: Upload the reports
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: benchmarks
+          path: reports/
+          if-no-files-found: ignore
+          retention-days: 30
+
+  search-perf:
+    name: Palette and graph in Chromium
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Install Chromium
+        run: pnpm exec playwright install --with-deps chromium
+      - name: Palette and graph
+        env:
+          PERF_SOFTWARE_GL: '1'
+        run: |
+          set -o pipefail
+          mkdir -p reports
+          pnpm exec playwright test -c e2e/search/perf.config.ts | tee reports/search-perf.txt
+      - name: Upload the report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: search-perf
+          path: |
+            reports/
+            test-results/search-perf/
+          if-no-files-found: ignore
+          retention-days: 30
+
+  memory-soak:
+    name: Memory soak
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Install Chromium
+        run: pnpm exec playwright install --with-deps chromium
+      - name: Memory soak
+        run: pnpm exec tsx scripts/memory/soak.ts --strict --out reports/memory-soak
+      - name: Upload the report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: memory-soak
+          path: reports/
+          if-no-files-found: ignore
+          retention-days: 30
