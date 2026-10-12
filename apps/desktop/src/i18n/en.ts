@@ -1,5 +1,9 @@
 /** English strings of the desktop feature (namespace `desktop`). */
 export const en = {
+  // Saving exports (the native save dialog)
+  saveDialogTitle: 'Save as',
+  saveFileFilter: '{extension} file',
+
   // Commands and menus
   menuFile: 'File',
   menuEdit: 'Edit',

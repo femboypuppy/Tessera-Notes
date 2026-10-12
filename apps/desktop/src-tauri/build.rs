@@ -25,6 +25,8 @@ const COMMANDS: &[&str] = &[
     "folder_suggest",
     "folder_pick",
     "folder_reveal",
+    "file_save",
+    "window_print",
     "workspace_attach",
     "workspace_detach",
     "workspace_status",

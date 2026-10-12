@@ -513,6 +513,7 @@ and load them with `lazy()` or `import()`.
 | `workspaceRegistry` | app | `MemoryWorkspaceRegistry` | IndexedDB (50), Tauri (100) | 03, 07 |
 | `markdownCodec` | app | `BasicMarkdownCodec` (paragraphs and headings) | remark codec (50) | 08 |
 | `credentialStore` | app | `MemoryCredentialStore` (browsers sign in with cookies) | IndexedDB (50), OS keychain (100) | 03, 07 |
+| `fileSaver` | app | `DownloadFileSaver` (a download link, `window.print()`) | native save dialog and webview print (100) | 07, 08 |
 | `docStore` | storage | `MemoryDocStore` | IndexedDB (50), Tauri SQLite (100) | 03, 07 |
 | `assetStore` | storage | `MemoryAssetStore` (object URLs) | IndexedDB (50), Tauri files (100) | 03, 07 |
 | `syncProvider` | storage | `LocalSyncProvider` (local only, awareness without network) | Hocuspocus (50, available only when `workspace.serverUrl` is set) | 03 |
@@ -524,7 +525,7 @@ registrations from the highest priority down (equal priorities keep feature load
 those whose `isAvailable` returns false or throws and those whose `create` throws, and falls back
 to the stub. `ctx.serviceSources` shows the winner. Phases decide what `create` receives:
 `app` gets `{ platform, settings }`; `storage` adds `{ workspace, app, currentUser, events }`
-(`app` holds the workspace registry, the codec and the credential store);
+(`app` holds the workspace registry, the codec, the credential store and the file saver);
 `index` adds `{ storage, workspaceDoc, pages, loadPageDoc, loadDatabaseDoc }`. The stubs of the
 markdown codec and the indexes load on demand, so they never weigh on the startup bundle.
 
@@ -1038,3 +1039,6 @@ branch builds on its own.
 - Plugin API 2: `pluginManifestSchema` gained `renderer` (a second module, loaded once per
   plugin in a hidden frame), and `PLUGIN_API_VERSION` is 2, so Tessera 0.1 refuses plugins that
   need a renderer instead of running them without one.
+- The `fileSaver` service (0.1.3): exports save and print through it, because the desktop
+  webviews ignore `<a download>` and WKWebView ignores `window.print()` (#30). `save` resolves to
+  null when the user cancels the save dialog.

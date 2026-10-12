@@ -1,5 +1,6 @@
 import {
   resolveViewProperties,
+  type AppContext,
   type PropertyDefinition,
   type ResolvedRow,
   type ViewConfig,
@@ -15,21 +16,21 @@ import type { QueryResult } from '../../query/run';
 import type { QueryContext } from '../../query/types';
 import { runAction } from '../hooks';
 
-/** Saves text as a file through a temporary link. */
-export function downloadText(
+/**
+ * Saves text as a file through the platform's file saver: a download in browsers, the native save
+ * dialog in the desktop app (whose webview ignores download links). False when the user cancelled.
+ */
+export async function saveText(
+  ctx: Pick<AppContext, 'services'>,
   text: string,
   fileName: string,
   type = 'text/csv;charset=utf-8',
-): void {
-  const url = URL.createObjectURL(new Blob([text], { type }));
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = fileName;
-  link.rel = 'noopener';
-  document.body.append(link);
-  link.click();
-  link.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 10_000);
+): Promise<boolean> {
+  const saved = await ctx.services.fileSaver.save({
+    name: fileName,
+    data: new Blob([text], { type }),
+  });
+  return saved !== null;
 }
 
 /**
@@ -65,13 +66,14 @@ export function ExportCsvItem({
     <DropdownMenuItem
       icon={<Download />}
       onSelect={() =>
-        runAction(ctx, () => {
+        runAction(ctx, async () => {
           if (result.rows.length === 0) {
             ctx.toast({ title: t('exportCsvEmpty') });
             return;
           }
           const csv = rowsToCsv(result.rows, exportColumns(snapshot.properties, view), queryCtx);
-          downloadText(csv, csvFileName(databaseTitle, view.name || viewTypeName(view.type)));
+          const name = csvFileName(databaseTitle, view.name || viewTypeName(view.type));
+          if (!(await saveText(ctx, csv, name))) return;
           ctx.toast({
             variant: 'success',
             title: t('exportCsvDone', { count: result.rows.length }),

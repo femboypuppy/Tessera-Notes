@@ -6,6 +6,7 @@ import {
   type ExportResult,
   type ExportScope,
   type Exporter,
+  type SavedFile,
 } from '@tessera/core';
 import { useAppContext, usePages } from '@tessera/core/react';
 import {
@@ -39,7 +40,7 @@ import { fileNameFor } from '../export/names';
 import { SingleFileSink, ZipExportSink } from '../export/zip-sink';
 import { t } from '../i18n';
 import { basename } from '../paths';
-import { blobPart, downloadBlob } from './download';
+import { blobPart } from './download';
 import { exportContextFor } from './jobs';
 import { formatBytes, groupIssues } from './labels';
 import { printPath } from './routes';
@@ -83,10 +84,17 @@ interface ExportedFile {
   name: string;
 }
 
+/** Saving the exported file: downloading it, or the save dialog of the desktop app. */
+type SaveState =
+  | { kind: 'saving' }
+  | { kind: 'saved'; saved: SavedFile }
+  | { kind: 'cancelled' }
+  | { kind: 'failed'; message: string };
+
 type Phase =
   | { kind: 'options' }
   | { kind: 'running'; progress: ExportProgress | null; controller: AbortController }
-  | { kind: 'done'; result: ExportResult; file: ExportedFile }
+  | { kind: 'done'; result: ExportResult; file: ExportedFile; save: SaveState }
   | { kind: 'error'; message: string };
 
 function ExportForm({ pageId }: { pageId: string | null }) {
@@ -120,6 +128,22 @@ function ExportForm({ pageId }: { pageId: string | null }) {
   };
 
   const scopeTitle = scope === 'workspace' ? ctx.workspace.info.name : page?.title || t('untitled');
+  const fileSaver = ctx.services.fileSaver;
+
+  /** Downloads the file, or asks where to save it (the desktop app's save dialog). */
+  const save = async (result: ExportResult, file: ExportedFile) => {
+    setPhase({ kind: 'done', result, file, save: { kind: 'saving' } });
+    let state: SaveState;
+    try {
+      const saved = await fileSaver.save({ name: file.name, data: file.blob });
+      state = saved ? { kind: 'saved', saved } : { kind: 'cancelled' };
+    } catch (error) {
+      state = { kind: 'failed', message: toError(error).message };
+    }
+    setPhase((current) =>
+      current.kind === 'done' && current.file === file ? { ...current, save: state } : current,
+    );
+  };
 
   const run = async () => {
     if (!option) return;
@@ -203,8 +227,7 @@ function ExportForm({ pageId }: { pageId: string | null }) {
         setPhase({ kind: 'options' });
         return;
       }
-      downloadBlob(file.blob, file.name);
-      setPhase({ kind: 'done', result, file });
+      void save(result, file);
     } catch (error) {
       if (error instanceof AbortError || controller.signal.aborted) setPhase({ kind: 'options' });
       else setPhase({ kind: 'error', message: toError(error).message });
@@ -256,6 +279,19 @@ function ExportForm({ pageId }: { pageId: string | null }) {
     const done = phase.kind === 'done';
     const issues = done ? groupIssues(phase.result.issues) : [];
     const Icon = done ? CircleCheck : CircleX;
+    let description = done ? '' : phase.message;
+    if (phase.kind === 'done') {
+      const name = phase.file.name;
+      const size = formatBytes(phase.file.blob.size);
+      const state = phase.save;
+      if (state.kind === 'saving') description = t('exportSavingHint', { name });
+      else if (state.kind === 'saved')
+        description = state.saved.path
+          ? t('exportSavedHint', { name: state.saved.name, size, path: state.saved.path })
+          : t('exportDoneHint', { name, size });
+      else description = t('exportNotSavedHint', { name });
+    }
+    const saveFailure = phase.kind === 'done' && phase.save.kind === 'failed' ? phase.save : null;
     return (
       <>
         <DialogHeader>
@@ -266,32 +302,35 @@ function ExportForm({ pageId }: { pageId: string | null }) {
             />
             <DialogTitle>{done ? t('exportDoneTitle') : t('exportFailedTitle')}</DialogTitle>
           </div>
-          <DialogDescription>
-            {done
-              ? t('exportDoneHint', {
-                  name: phase.file.name,
-                  size: formatBytes(phase.file.blob.size),
-                })
-              : phase.message}
-          </DialogDescription>
+          <DialogDescription aria-live="polite">{description}</DialogDescription>
         </DialogHeader>
-        {issues.length ? (
-          <DialogBody className="pb-2">
-            <Callout tone="warning" title={t('exportIssuesTitle')}>
-              <ul className="mt-1 flex flex-col gap-0.5">
-                {issues.map((group) => (
-                  <li key={group.label}>
-                    {group.label} ({group.issues.length})
-                  </li>
-                ))}
-              </ul>
-            </Callout>
+        {issues.length || saveFailure ? (
+          <DialogBody className="flex flex-col gap-3 pb-2">
+            {saveFailure ? (
+              <Callout tone="danger" title={t('saveFailedTitle')}>
+                {saveFailure.message}
+              </Callout>
+            ) : null}
+            {issues.length ? (
+              <Callout tone="warning" title={t('exportIssuesTitle')}>
+                <ul className="mt-1 flex flex-col gap-0.5">
+                  {issues.map((group) => (
+                    <li key={group.label}>
+                      {group.label} ({group.issues.length})
+                    </li>
+                  ))}
+                </ul>
+              </Callout>
+            ) : null}
           </DialogBody>
         ) : null}
         <DialogFooter>
-          {done ? (
-            <Button onClick={() => downloadBlob(phase.file.blob, phase.file.name)}>
-              {t('downloadAgain')}
+          {phase.kind === 'done' ? (
+            <Button
+              loading={phase.save.kind === 'saving'}
+              onClick={() => void save(phase.result, phase.file)}
+            >
+              {fileSaver.mode === 'dialog' ? t('saveAs') : t('downloadAgain')}
             </Button>
           ) : (
             <Button onClick={() => setPhase({ kind: 'options' })}>{t('tryAgain')}</Button>

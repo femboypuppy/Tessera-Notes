@@ -8,6 +8,7 @@ export const TAURI_REGISTRY_ID = 'tauri-folders';
 export const TAURI_DOC_STORE_ID = 'tauri-sqlite';
 export const TAURI_ASSET_STORE_ID = 'tauri-files';
 export const TAURI_CREDENTIAL_STORE_ID = 'keychain';
+export const TAURI_FILE_SAVER_ID = 'native-dialog';
 
 /** Commands of the desktop feature. */
 export const DESKTOP_COMMANDS = {

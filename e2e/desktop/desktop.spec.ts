@@ -8,6 +8,8 @@ import {
   fakeState,
   HOME,
   queuePick,
+  queueSave,
+  savedText,
   test,
   useDesktop,
 } from './fixtures';
@@ -231,6 +233,102 @@ test.describe('the desktop app (Tauri mocked)', () => {
       pageId,
     );
     await expect(page).toHaveURL(new RegExp(`/p/${pageId}$`));
+  });
+
+  test('exports save through the native dialog and printing uses the webview', async ({ page }) => {
+    // Webviews ignore downloads and (WKWebView) `window.print()`: neither may be used here.
+    await page.addInitScript(() => {
+      const state = window as unknown as { browserPrints: number };
+      state.browserPrints = 0;
+      window.print = () => {
+        state.browserPrints += 1;
+      };
+    });
+    const downloads: string[] = [];
+    page.on('download', (download) => downloads.push(download.suggestedFilename()));
+    await useDesktop(page);
+    await createDesktopWorkspace(page, 'Apollo research');
+    await createPage(page, 'Launch plan');
+    await page.getByRole('textbox', { name: 'Page title' }).press('Enter');
+    const body = page.getByRole('main').locator('[contenteditable="true"]').first();
+    await expect(body).toBeFocused();
+    await page.keyboard.type('T-minus 10 and holding');
+    await expect(body).toContainText('T-minus 10 and holding');
+
+    // Markdown: the native save dialog suggests the file name, and the file lands where chosen.
+    const target = `${HOME}/Documents/Launch plan.md`;
+    await queueSave(page, target);
+    await page.getByRole('button', { name: 'Export page' }).click();
+    const exportDialog = page.getByRole('dialog', { name: 'Export' });
+    await exportDialog.getByRole('button', { name: 'Export', exact: true }).click();
+    const done = page.getByRole('dialog', { name: 'Export ready' });
+    await expect(done).toContainText(`saved to ${target}`);
+    const state = await fakeState(page);
+    expect(state.saveDialogs).toEqual([
+      { title: 'Save as', name: 'Launch plan.md', filter: 'MD file' },
+    ]);
+    await expect.poll(() => savedText(page, target)).toContain('T-minus 10 and holding');
+
+    // Cancelling a second save writes nothing and says so.
+    await queueSave(page, null);
+    await done.getByRole('button', { name: 'Save as…' }).click();
+    await expect(done).toContainText('Launch plan.md was not saved');
+    expect(Object.keys((await fakeState(page)).savedFiles)).toEqual([target]);
+    await done.getByRole('button', { name: 'Done' }).click();
+
+    // PDF: the print view opens the webview's print dialog, and so does its Print button.
+    await page.getByRole('button', { name: 'Export page' }).click();
+    await exportDialog.getByRole('radio', { name: /^PDF/ }).click();
+    await exportDialog.getByRole('button', { name: 'Open print view' }).click();
+    await expect(page.getByTestId('print-page').getByRole('heading', { level: 1 })).toHaveText(
+      'Launch plan',
+    );
+    await expect.poll(async () => (await fakeState(page)).printed).toBe(1);
+    await page.getByRole('button', { name: 'Print or save as PDF' }).click();
+    await expect.poll(async () => (await fakeState(page)).printed).toBe(2);
+
+    expect(
+      await page.evaluate(() => (window as unknown as { browserPrints: number }).browserPrints),
+    ).toBe(0);
+    expect(downloads).toEqual([]);
+  });
+
+  test('a database view exports its CSV through the native save dialog', async ({ page }) => {
+    const downloads: string[] = [];
+    page.on('download', (download) => downloads.push(download.suggestedFilename()));
+    await useDesktop(page);
+    await createDesktopWorkspace(page, 'Apollo research');
+    await page.getByRole('button', { name: 'New database', exact: true }).click();
+    const title = page.getByRole('textbox', { name: 'Page title' });
+    await expect(title).toBeFocused();
+    await expect(page.getByRole('grid')).toBeVisible({ timeout: 20_000 });
+    await title.fill('Crew');
+    await page.getByRole('grid').getByRole('button', { name: 'New', exact: true }).click();
+    const cell = page.getByRole('textbox', { name: /^Edit / });
+    await expect(cell).toBeFocused();
+    await cell.fill('Neil Armstrong');
+    await cell.press('Enter');
+    await expect(page.getByText('1 row', { exact: true })).toBeVisible();
+
+    const target = `${HOME}/Documents/Crew.csv`;
+    await queueSave(page, target);
+    await page.getByRole('button', { name: 'More database actions' }).click();
+    await page.getByRole('menuitem', { name: 'Export view as CSV' }).click();
+    await expect.poll(() => savedText(page, target)).toContain('Neil Armstrong');
+    expect((await fakeState(page)).saveDialogs).toEqual([
+      { title: 'Save as', name: 'Crew - Table.csv', filter: 'CSV file' },
+    ]);
+    await expect(page.getByText('Exported 1 row', { exact: true })).toBeVisible();
+
+    // Cancelled: nothing written, and no "exported" toast. The first menu is gone before the
+    // second opens (a click during its exit animation would close it again).
+    await expect(page.getByRole('menu')).toHaveCount(0);
+    await queueSave(page, null);
+    await page.getByRole('button', { name: 'More database actions' }).click();
+    await page.getByRole('menuitem', { name: 'Export view as CSV' }).click();
+    await expect.poll(async () => (await fakeState(page)).saveDialogs.length).toBe(2);
+    expect(Object.keys((await fakeState(page)).savedFiles)).toEqual([target]);
+    expect(downloads).toEqual([]);
   });
 
   test('Desktop settings control the folder, the mirror, quick capture and the tray', async ({

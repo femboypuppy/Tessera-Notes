@@ -8,7 +8,7 @@ import { SingleFileSink } from '../export/zip-sink';
 import { t } from '../i18n';
 import { IMPORTER_IDS } from '../importers';
 import { basename } from '../paths';
-import { blobPart, downloadBlob } from './download';
+import { blobPart } from './download';
 import { exportContextFor } from './jobs';
 import { openExportDialog, openImportDialog } from './store';
 
@@ -52,7 +52,12 @@ export default function SettingsPanel() {
       );
       if (!sink.name || sink.data === null) throw new Error(t('exportFailedTitle'));
       const data = typeof sink.data === 'string' ? sink.data : blobPart(sink.data);
-      downloadBlob(new Blob([data], { type: 'application/json' }), basename(sink.name));
+      const saved = await ctx.services.fileSaver.save({
+        name: basename(sink.name),
+        data: new Blob([data], { type: 'application/json' }),
+      });
+      if (saved?.path)
+        ctx.toast({ variant: 'success', title: t('backupSaved', { path: saved.path }) });
     } catch (error) {
       ctx.toast({
         title: t('exportFailedTitle'),
@@ -92,7 +97,7 @@ export default function SettingsPanel() {
         {backup ? (
           <Button onClick={() => void downloadBackup()} loading={backingUp}>
             <Archive aria-hidden="true" />
-            {t('downloadBackup')}
+            {ctx.services.fileSaver.mode === 'dialog' ? t('saveBackup') : t('downloadBackup')}
           </Button>
         ) : null}
         <Button onClick={() => openImportDialog(IMPORTER_IDS.backup)}>
