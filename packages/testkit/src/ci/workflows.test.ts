@@ -43,6 +43,7 @@ describe('.github/workflows', () => {
         'docker.yml',
         'docs.yml',
         'labeler.yml',
+        'nightly.yml',
         'release.yml',
       ]),
     );
@@ -297,6 +298,48 @@ describe('desktop.yml', () => {
       readFileSync(path.join(ROOT, 'apps/desktop/src-tauri/tauri.conf.json'), 'utf8'),
     ) as { bundle?: { macOS?: { signingIdentity?: string } } };
     expect(config.bundle?.macOS?.signingIdentity).toBe('-');
+  });
+});
+
+describe('nightly.yml', () => {
+  const nightly = byName('nightly.yml');
+  const runs = Object.values(nightly.jobs).flatMap((job) =>
+    steps(job).map((step) => step.run ?? ''),
+  );
+
+  it('runs every night and on demand, and never cancels a run in progress', () => {
+    expect(nightly.on).toMatchObject({ schedule: [{ cron: expect.any(String) }] });
+    expect(nightly.on).toHaveProperty('workflow_dispatch');
+    expect(nightly.concurrency).toMatchObject({ 'cancel-in-progress': false });
+  });
+
+  it('runs the heavy checks that run nowhere else in CI (#33)', () => {
+    for (const command of [
+      'pnpm --filter @tessera/server load-test',
+      'TESSERA_IMPORT_BENCH_NOTES: 2000',
+      'pnpm --filter @tessera/search bench',
+      'playwright test -c e2e/search/perf.config.ts',
+      'scripts/memory/soak.ts --strict',
+    ]) {
+      expect(nightly.text.includes(command), `nightly.yml runs "${command}"`).toBe(true);
+    }
+    expect(nightly.text).toContain("PERF_SOFTWARE_GL: '1'");
+  });
+
+  it('keeps every report as an artifact, also when its check fails', () => {
+    // A failed check fails the run: no step or job may hide it.
+    for (const [id, job] of Object.entries(nightly.jobs)) {
+      expect(job['continue-on-error'], id).toBeUndefined();
+      const upload = steps(job).find((step) => step.uses?.startsWith('actions/upload-artifact@'));
+      expect(upload?.if, id).toBe('${{ !cancelled() }}');
+      expect(upload?.with?.['retention-days'], id).toBeGreaterThan(0);
+      expect(steps(job).every((step) => step['continue-on-error'] === undefined)).toBe(true);
+    }
+    // Console reports are kept with `tee`. The default shell (`bash -e`) has no pipefail, so
+    // without it the pipeline would exit with tee's status and a failed check would pass.
+    const teed = runs.filter((run) => run.includes('| tee'));
+    expect(teed.length).toBeGreaterThan(0);
+    for (const run of teed) expect(run).toContain('set -o pipefail');
   });
 });
 
