@@ -122,10 +122,19 @@ other client and everything converged.
   the Yjs transaction, before Hocuspocus sends the acknowledgement; `crash.test.ts` kills the server
   process and finds every acknowledged update. SQLite runs WAL + `synchronous=NORMAL`: an OS crash
   could drop the newest commits, and clients resend anything the server lacks on reconnect.
-- **Compaction can't race writes.** Browser: read, merge (GC through a scratch doc), delete and
-  rewrite inside one readwrite IndexedDB transaction, which IndexedDB serializes against every other
-  writer (also other tabs). Server: one synchronous SQLite transaction on the single JS thread.
-  Tested with interleaved writes from two tabs and 2,000 random writes with random compactions.
+- **Compaction can't race writes.** Browser: read a doc's records, merge them in a Web Worker (GC
+  through a scratch doc), then, in one readwrite IndexedDB transaction, delete exactly the records
+  that were read and add the result, only if all of them are still there. Records written meanwhile
+  stay; when another tab compacted or deleted the doc first, nothing changes (keys are never
+  reused). Server: one synchronous SQLite transaction on the single JS thread. Tested with
+  interleaved writes from two tabs, writes and a compaction or deletion during the merge, and 2,000
+  random writes with random compactions.
+- **Large docs load off the main thread (#66).** A workspace doc after a 5,000-note import held
+  209 updates (1.5 MB merged); merging them on load took 210–250 ms of one main-thread task, and
+  compaction only started at 400 updates. Loads of 64 KiB or more in several records now merge in
+  the same worker (`WorkerMerger`, started on first use and stopped after 30 s idle; it merges on
+  the main thread where no worker can start), and docs are compacted once 256 KiB were stored since
+  their last compaction, as well as at 400 updates.
 - **Multi-tab**: broadcast only after commit (never before durability); receivers apply with
   `STORE_ORIGIN`, so they never write twice. Messages that arrive between `load` and `watch` are
   buffered and replayed. With a server, a tab can still receive the server's copy of another tab's

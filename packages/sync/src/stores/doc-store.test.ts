@@ -14,6 +14,7 @@ import * as Y from 'yjs';
 import type { ChannelLike } from '../idb/channel';
 import { createChannelHub } from '../testing/channels';
 import { IndexedDbDocStore } from './doc-store';
+import { mainThreadMerger, type UpdateMerger } from './merger';
 import type { StorageErrorInfo } from './storage-errors';
 
 const stores: IndexedDbDocStore[] = [];
@@ -83,6 +84,48 @@ function slowCommits(): { release(): void } {
       holding = false;
       for (const fire of held.splice(0)) fire();
     },
+  };
+}
+
+/** A main-thread merger that counts what it does. */
+function countingMerger(): UpdateMerger & { merges: number; compactions: number } {
+  const inner = mainThreadMerger();
+  const merger = {
+    merges: 0,
+    compactions: 0,
+    merge(updates: readonly Uint8Array[]) {
+      merger.merges += 1;
+      return inner.merge(updates);
+    },
+    compact(updates: readonly Uint8Array[]) {
+      merger.compactions += 1;
+      return inner.compact(updates);
+    },
+    dispose() {},
+  };
+  return merger;
+}
+
+/** A merger whose compactions wait for `release()`, like a worker still busy merging. */
+function gatedMerger(): UpdateMerger & { started(): Promise<void>; release(): void } {
+  const inner = mainThreadMerger();
+  let onStart: (() => void) | null = null;
+  let startedPromise = new Promise<void>((resolve) => (onStart = resolve));
+  let gate: (() => void) | null = null;
+  return {
+    merge: (updates) => inner.merge(updates),
+    async compact(updates) {
+      const open = new Promise<void>((resolve) => (gate = resolve));
+      onStart?.();
+      await open;
+      return inner.compact(updates);
+    },
+    started: () => startedPromise,
+    release() {
+      gate?.();
+      startedPromise = new Promise<void>((resolve) => (onStart = resolve));
+    },
+    dispose() {},
   };
 }
 
@@ -221,6 +264,115 @@ describe('IndexedDbDocStore', () => {
         .getText('t')
         .toString(),
     ).toBe('x'.repeat(12));
+  });
+
+  it('compacts docs that grew by many bytes in few updates, and only once (#66)', async () => {
+    const merger = countingMerger();
+    const store = await openStore(new IDBFactory(), {
+      compactBytes: 4096,
+      compactDelayMs: 5,
+      merger,
+    });
+    const source = new Y.Doc();
+    // An import writes few, large updates: far under the update threshold, over the byte one.
+    await Promise.all(
+      [0, 1, 2].map((i) => store.storeUpdate('ws:w', textUpdate(source, `${i}`.repeat(2000)))),
+    );
+    await vi.waitFor(async () => expect(await store.updateCount('ws:w')).toBe(1));
+    expect(merger.compactions).toBe(1);
+    // A small edit on top of the compacted doc doesn't compact it again.
+    await store.storeUpdate('ws:w', textUpdate(source, 'small'));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(await store.updateCount('ws:w')).toBe(2);
+    expect(merger.compactions).toBe(1);
+    expect(
+      docFrom(await store.load('ws:w'))
+        .getText('t')
+        .toString(),
+    ).toBe(source.getText('t').toString());
+  });
+
+  it('keeps the writes that land while a compaction merges off the main thread', async () => {
+    const merger = gatedMerger();
+    const store = await openStore(new IDBFactory(), { merger });
+    const source = new Y.Doc();
+    for (const word of ['one ', 'two ', 'three ']) {
+      await store.storeUpdate('page:a', textUpdate(source, word, source.getText('t').length));
+    }
+    const compaction = store.compact('page:a');
+    await merger.started();
+    await store.storeUpdate('page:a', textUpdate(source, 'four', source.getText('t').length));
+    merger.release();
+    await compaction;
+    // The three merged records became one; the write made meanwhile is its own record.
+    expect(await store.updateCount('page:a')).toBe(2);
+    const loaded = docFrom(await store.load('page:a'));
+    expect(loaded.getText('t').toString()).toBe('one two three four');
+    expect(Y.encodeStateVector(loaded)).toEqual(Y.encodeStateVector(source));
+  });
+
+  it('changes nothing when another tab compacted or deleted the doc while it merged', async () => {
+    const factory = new IDBFactory();
+    const merger = gatedMerger();
+    const slow = await openStore(factory, { merger });
+    const other = await openStore(factory);
+    const source = new Y.Doc();
+    for (const word of ['alpha ', 'beta ', 'gamma']) {
+      const update = textUpdate(source, word, source.getText('t').length);
+      await slow.storeUpdate('page:a', update);
+      await slow.storeUpdate('page:b', update);
+    }
+    const first = slow.compact('page:a');
+    await merger.started();
+    await other.compact('page:a');
+    merger.release();
+    await first;
+    // Not added a second time on top of the other tab's result.
+    expect(await other.updateCount('page:a')).toBe(1);
+    expect(
+      docFrom(await other.load('page:a'))
+        .getText('t')
+        .toString(),
+    ).toBe('alpha beta gamma');
+
+    const second = slow.compact('page:b');
+    await merger.started();
+    await other.delete('page:b');
+    merger.release();
+    await second;
+    // A deleted doc stays deleted.
+    expect(await other.load('page:b')).toBeNull();
+    expect(await other.list('page:')).toEqual(['page:a']);
+  });
+
+  it('merges large loads off the main thread, and corrupt ones here, skipping what fails', async () => {
+    const merger = countingMerger();
+    const errors: StorageErrorInfo[] = [];
+    const store = await openStore(new IDBFactory(), { offThreadBytes: 1024, merger });
+    store.onStorageError((info) => errors.push(info));
+    const source = new Y.Doc();
+    await store.storeUpdate('page:big', textUpdate(source, 'x'.repeat(800)));
+    await store.storeUpdate('page:big', textUpdate(source, 'y'.repeat(800), 800));
+    await store.storeUpdate('page:small', textUpdate(new Y.Doc(), 'tiny'));
+    await store.storeUpdate('page:small', textUpdate(new Y.Doc(), 'tinier'));
+    expect(
+      docFrom(await store.load('page:big'))
+        .getText('t')
+        .toString(),
+    ).toBe(`${'x'.repeat(800)}${'y'.repeat(800)}`);
+    expect(merger.merges).toBe(1);
+    await store.load('page:small');
+    expect(merger.merges).toBe(1);
+
+    // A damaged record: the worker's merge rejects, and the main thread skips and reports it.
+    await store.storeUpdate('page:big', new Uint8Array([0xff, 0xff, 0xff, 0xff]));
+    expect(
+      docFrom(await store.load('page:big'))
+        .getText('t')
+        .toString(),
+    ).toBe(`${'x'.repeat(800)}${'y'.repeat(800)}`);
+    expect(merger.merges).toBe(2);
+    expect(errors.map((info) => info.operation)).toEqual(['load']);
   });
 
   it('deletes docs and lists them by prefix', async () => {
