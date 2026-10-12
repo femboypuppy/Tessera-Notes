@@ -69,17 +69,7 @@ export default defineConfig({
     {
       name: 'firefox',
       timeout: 90_000,
-      use: {
-        ...devices['Desktop Firefox'],
-        viewport,
-        // Playwright 1.63's Firefox driver can lose the first navigation into a page sent with
-        // `Cross-Origin-Opener-Policy: same-origin` (the Tessera server's pages): goto never
-        // resolves although the page has loaded (microsoft/playwright#42731, fixed in 1.64). With
-        // this, Firefox doesn't swap browsing contexts for COOP. Drop it with the upgrade.
-        launchOptions: {
-          firefoxUserPrefs: { 'browser.tabs.remote.useCrossOriginOpenerPolicy': false },
-        },
-      },
+      use: { ...devices['Desktop Firefox'], viewport },
     },
   ],
   webServer: {

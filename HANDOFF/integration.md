@@ -358,7 +358,7 @@ Xvfb, `CI=true`) and fixed at its cause; no budget, timeout or assertion was loo
   (microsoft/playwright#42731, fixed in 1.64, still an alpha). The Firefox project sets
   `browser.tabs.remote.useCrossOriginOpenerPolicy: false` (checked in the container: without it a
   COOP navigation clears `window.name`, with it the tab keeps its context). The app and the
-  server keep COOP. **Next:** drop the pref when upgrading to Playwright 1.64.
+  server keep COOP. ✅ Playwright 1.64 fixed it, and the pref is gone since 0.1.3 (#35).
 - **Timed specs measured the runner.** The 10,000-row table spec scrolled at 60 fps on one run
   and 30 fps on the next with the same code, and the 2,000-block typing p95 swung between 7 and
   25 ms in one run. A scrolled frame of that table costs about 33 ms of CPU across Chromium's
