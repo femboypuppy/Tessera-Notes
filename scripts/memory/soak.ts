@@ -36,6 +36,8 @@ const EVERY_MS = Number(values.every) * 1000;
 const WARMUP_MS = Number(values.warmup) * 1000;
 const MAX_SLOPE_MB_PER_MINUTE = 0.25;
 const MAX_DOM_GROWTH = 0.1;
+/** Every sample is taken on this page of the demo workspace. */
+const SAMPLE_PAGE = 'Welcome to Tessera';
 
 interface Sample {
   minute: number;
@@ -43,18 +45,26 @@ interface Sample {
   nodes: number;
   listeners: number;
   rounds: number;
+  /** Where the app was: samples are only comparable on the same screen. */
+  screen: string;
 }
 
-async function measure(cdp: CDPSession): Promise<Omit<Sample, 'minute' | 'rounds'>> {
+async function measure(page: Page, cdp: CDPSession): Promise<Omit<Sample, 'minute' | 'rounds'>> {
   // Twice: objects freed by the first pass (finalizers, weak maps) go in the second.
   await cdp.send('HeapProfiler.collectGarbage');
   await cdp.send('HeapProfiler.collectGarbage');
   const heap = await cdp.send('Runtime.getHeapUsage');
   const dom = await cdp.send('Memory.getDOMCounters');
+  const screen = await page.evaluate(
+    () =>
+      document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Page title"]')?.value ??
+      location.pathname,
+  );
   return {
     heapMB: heap.usedSize / 1024 / 1024,
     nodes: dom.nodes,
     listeners: dom.jsEventListeners,
+    screen,
   };
 }
 
@@ -179,16 +189,23 @@ try {
     rounds += 1;
     if (Date.now() >= nextSample) {
       const minute = (Date.now() - started) / 60_000;
-      const sample = { minute, rounds, ...(await measure(cdp)) };
+      // A round ends on its own page or, every fifth round, on the Trash: measure on one screen.
+      await open(page, SAMPLE_PAGE);
+      const sample = { minute, rounds, ...(await measure(page, cdp)) };
       samples.push(sample);
       console.info(
         `${minute.toFixed(1)} min, ${rounds} rounds: heap ${sample.heapMB.toFixed(1)} MB, ` +
-          `${sample.nodes} nodes, ${sample.listeners} listeners`,
+          `${sample.nodes} nodes, ${sample.listeners} listeners (${sample.screen})`,
       );
       nextSample += EVERY_MS;
     }
   }
   if (samples.length < 3) throw new Error('Too few samples; run for longer');
+  // Two screens differ by hundreds of DOM nodes and over a megabyte of heap, which would read as
+  // growth (or hide it): every sample must come from the same one.
+  const screens = [...new Set(samples.map((sample) => sample.screen))];
+  if (screens.length > 1)
+    throw new Error(`Samples were taken on different screens: ${screens.join(', ')}`);
 
   const heapSlope = slope(samples.map((sample) => [sample.minute, sample.heapMB] as const));
   const first = samples[0] as Sample;
