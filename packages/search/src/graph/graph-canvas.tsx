@@ -3,6 +3,7 @@ import { forwardRef, useEffect, useImperativeHandle, useRef, type CSSProperties 
 import Sigma from 'sigma';
 import type { Settings } from 'sigma/settings';
 import type { EdgeAttributes, NodeAttributes, TesseraGraph } from './build';
+import { ImagePan, isSoftwareRenderer, webglRendererName } from './image-pan';
 import { placeLabels, type LabelCandidate } from './label-layout';
 import { mix, type GraphTheme } from './theme';
 
@@ -348,7 +349,50 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
       schedule();
     });
     renderer.on('clickNode', ({ node }) => clickRef.current(node));
-    renderer.on('afterRender', () => drawLabels(labels.current, themeRef.current));
+    // Without a GPU, a large graph pans by moving the drawn layers and is redrawn once on release
+    // (see ImagePan). The mouse layer stays in place: sigma reads pointer positions relative to it.
+    const nodeLayer = renderer.getCanvases().nodes;
+    const context = nodeLayer?.getContext('webgl2') ?? nodeLayer?.getContext('webgl') ?? null;
+    const software = context !== null && isSoftwareRenderer(webglRendererName(context));
+    const pan = new ImagePan(() =>
+      Object.entries(renderer.getCanvases())
+        .filter(([id]) => id !== 'mouse')
+        .map(([, layer]) => layer),
+    );
+    let panned = false;
+    const captor = renderer.getMouseCaptor();
+    captor.on('mousedown', (event) => {
+      const pressed = event.original;
+      if (software && largeRef.current && pressed instanceof MouseEvent && pressed.button === 0) {
+        pan.begin(event);
+      }
+    });
+    captor.on('mousemovebody', (event) => {
+      if (!pan.active) return;
+      // Sigma would move the camera and redraw. Counting the move as a drag, like sigma does,
+      // keeps the release from being taken for a click on the node under the pointer.
+      event.preventSigmaDefault();
+      captor.draggedEvents += 1;
+      pan.move(event);
+    });
+    captor.on('mouseup', () => {
+      const moved = pan.end();
+      if (!moved) return;
+      // The same camera move as sigma's drag, in one step.
+      const from = renderer.viewportToFramedGraph(moved.from);
+      const to = renderer.viewportToFramedGraph(moved.to);
+      const camera = renderer.getCamera();
+      const state = camera.getState();
+      panned = true;
+      camera.setState({ x: state.x + from.x - to.x, y: state.y + from.y - to.y });
+    });
+    renderer.on('afterRender', () => {
+      drawLabels(labels.current, themeRef.current);
+      if (panned) {
+        panned = false;
+        pan.clear();
+      }
+    });
     sigma.current = renderer;
     // The graphics driver can drop the context later (a GPU reset, too many contexts): the view
     // then shows its fallback, which can start a new renderer.
@@ -443,7 +487,8 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
       aria-label={label}
       aria-describedby={describedBy}
       className={className}
-      style={style}
+      // Layers moved during a pan stay inside the graph's box.
+      style={{ overflow: 'hidden', ...style }}
     />
   );
 });
