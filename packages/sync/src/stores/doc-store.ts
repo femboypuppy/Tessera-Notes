@@ -10,14 +10,27 @@ import {
   type IndexedDbOptions,
 } from '../idb/schema';
 import { StorageErrorEmitter, StoreClosedError, type StorageErrorInfo } from './storage-errors';
+import { WorkerMerger, type UpdateMerger } from './merger';
 import { markDirtyInTransaction } from './sync-state';
-import { compactUpdates, mergeUpdatesSafely } from './updates';
+import { mergeUpdatesSafely } from './updates';
 
 export interface IndexedDbDocStoreOptions extends IndexedDbOptions {
   /** Multi-tab messaging. Defaults to `BroadcastChannel`; null disables it. */
   channel?: ChannelFactory | null;
   /** Compact a doc in the background once it has this many stored updates. Default 400. */
   compactThreshold?: number;
+  /**
+   * Also compact a doc once this many bytes were stored for it since its last compaction: a large
+   * import writes few but big updates. Default 256 KiB.
+   */
+  compactBytes?: number;
+  /**
+   * Loads of at least this many bytes (in more than one update) merge off the main thread.
+   * Default 64 KiB.
+   */
+  offThreadBytes?: number;
+  /** Merges updates for large loads and every compaction. Defaults to a Web Worker. */
+  merger?: UpdateMerger;
   /** Delay before a background compaction runs. Default 1500 ms. */
   compactDelayMs?: number;
   /**
@@ -110,10 +123,12 @@ const LOAD_BUFFER_MS = 30_000;
  *
  * - **Durable writes.** `storeUpdate` resolves only after its transaction committed, with strict
  *   durability. Updates arriving together are group-committed in one transaction.
- * - **Compaction without races.** `compact` reads, merges, deletes and rewrites a doc's updates in
- *   one readwrite transaction. IndexedDB serializes readwrite transactions on a store, so a write
- *   from this or another tab lands entirely before (and is merged) or after (and is kept).
- *   Docs are also compacted in the background once they pass `compactThreshold` updates.
+ * - **Compaction without races, off the main thread.** `compact` reads a doc's updates, merges
+ *   them in a worker, then, in one readwrite transaction, replaces exactly the records it read with
+ *   the result, and only if they are all still there. Writes that landed meanwhile are kept; when
+ *   another tab compacted or deleted the doc meanwhile, nothing changes. Docs are also compacted in
+ *   the background past `compactThreshold` updates or `compactBytes` stored since the last
+ *   compaction, and large loads merge in the worker too (#66).
  * - **Multi-tab.** A tab announces its writes to the other tabs as it queues them, before the
  *   commit (which can take seconds on a busy disk), and confirms them once they are durable.
  *   Other tabs deliver them through `watch`, and the runtime applies them without storing them
@@ -152,6 +167,9 @@ export class IndexedDbDocStore implements DocStore {
   private readonly channel: ChannelLike | null;
   private readonly source = instanceId();
   private readonly compactThreshold: number;
+  private readonly compactBytes: number;
+  private readonly offThreadBytes: number;
+  private readonly merger: UpdateMerger;
   private readonly compactDelayMs: number;
   private readonly trackSync: boolean;
   private readonly adoptAfterMs: number;
@@ -178,6 +196,8 @@ export class IndexedDbDocStore implements DocStore {
     { updates: Uint8Array[]; timer: ReturnType<typeof setTimeout> }
   >();
   private readonly counts = new Map<string, number>();
+  /** Bytes stored for each doc since its last compaction (estimated from a load: all but the largest). */
+  private readonly appended = new Map<string, number>();
   private readonly compactTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private readonly compactions = new Map<string, Promise<void>>();
   private closedReason: string | null = null;
@@ -186,6 +206,9 @@ export class IndexedDbDocStore implements DocStore {
   private constructor(workspaceId: string, options: IndexedDbDocStoreOptions) {
     this.workspaceId = workspaceId;
     this.compactThreshold = options.compactThreshold ?? 400;
+    this.compactBytes = options.compactBytes ?? 256 * 1024;
+    this.offThreadBytes = options.offThreadBytes ?? 64 * 1024;
+    this.merger = options.merger ?? new WorkerMerger();
     this.compactDelayMs = options.compactDelayMs ?? 1500;
     this.trackSync = options.trackSync === true;
     this.adoptAfterMs = options.adoptAfterMs ?? 5000;
@@ -218,9 +241,24 @@ export class IndexedDbDocStore implements DocStore {
       const updates = records
         .map((record) => asBytes((record as Partial<UpdateRecord> | null)?.update))
         .filter((update): update is Uint8Array => update !== null);
+      let bytes = 0;
+      let largest = 0;
+      for (const update of updates) {
+        bytes += update.byteLength;
+        largest = Math.max(largest, update.byteLength);
+      }
       this.counts.set(docName, updates.length);
-      if (updates.length >= this.compactThreshold) this.scheduleCompaction(docName);
+      this.appended.set(docName, bytes - largest);
+      this.maybeCompact(docName);
       if (updates.length === 0) return null;
+      if (updates.length > 1 && bytes >= this.offThreadBytes) {
+        try {
+          return await this.merger.merge(updates);
+        } catch {
+          // A corrupt update (or a closed merger): merged here, skipping and reporting what fails.
+          this.requireDb();
+        }
+      }
       return mergeUpdatesSafely(updates, (index, error) =>
         this.errors.emit(
           'load',
@@ -314,6 +352,7 @@ export class IndexedDbDocStore implements DocStore {
       throw error;
     }
     this.counts.delete(docName);
+    this.appended.delete(docName);
     this.endLoadBuffer(docName);
   }
 
@@ -377,6 +416,7 @@ export class IndexedDbDocStore implements DocStore {
     for (const timer of this.compactTimers.values()) clearTimeout(timer);
     this.compactTimers.clear();
     await Promise.allSettled([...this.compactions.values()]);
+    this.merger.dispose();
     for (const { timer } of this.loadBuffers.values()) clearTimeout(timer);
     this.loadBuffers.clear();
     this.watchers.clear();
@@ -525,13 +565,19 @@ export class IndexedDbDocStore implements DocStore {
       return;
     }
     this.errors.recovered();
-    const perDoc = new Map<string, number>();
+    const perDoc = new Map<string, { count: number; bytes: number }>();
+    const add = (docName: string, update: Uint8Array) => {
+      const entry = perDoc.get(docName) ?? { count: 0, bytes: 0 };
+      entry.count += 1;
+      entry.bytes += update.byteLength;
+      perDoc.set(docName, entry);
+    };
     for (const write of batch) {
-      perDoc.set(write.docName, (perDoc.get(write.docName) ?? 0) + 1);
+      add(write.docName, write.update);
       write.resolve();
     }
-    for (const item of carried) perDoc.set(item.doc, (perDoc.get(item.doc) ?? 0) + 1);
-    for (const [docName, added] of perDoc) this.noteStored(docName, added);
+    for (const item of carried) add(item.doc, item.update);
+    for (const [docName, added] of perDoc) this.noteStored(docName, added.count, added.bytes);
     this.confirm(batch);
   }
 
@@ -551,6 +597,7 @@ export class IndexedDbDocStore implements DocStore {
       if (typeof item?.doc !== 'string' || !update) continue;
       items.push({ doc: item.doc, update, remote: item.remote === true });
       this.counts.set(item.doc, (this.counts.get(item.doc) ?? 0) + 1);
+      this.appended.set(item.doc, (this.appended.get(item.doc) ?? 0) + update.byteLength);
       this.loadBuffers.get(item.doc)?.updates.push(update);
       for (const watcher of [...(this.watchers.get(item.doc) ?? [])])
         this.deliver(watcher, update, item.doc);
@@ -624,10 +671,18 @@ export class IndexedDbDocStore implements DocStore {
 
   // Compaction.
 
-  private noteStored(docName: string, added: number): void {
-    const count = (this.counts.get(docName) ?? 0) + added;
-    this.counts.set(docName, count);
-    if (count >= this.compactThreshold) this.scheduleCompaction(docName);
+  private noteStored(docName: string, added: number, bytes: number): void {
+    this.counts.set(docName, (this.counts.get(docName) ?? 0) + added);
+    this.appended.set(docName, (this.appended.get(docName) ?? 0) + bytes);
+    this.maybeCompact(docName);
+  }
+
+  /** Schedules a compaction once a doc has many updates, or many new bytes since the last one. */
+  private maybeCompact(docName: string): void {
+    const count = this.counts.get(docName) ?? 0;
+    const appended = this.appended.get(docName) ?? 0;
+    if (count >= this.compactThreshold || (count >= 2 && appended >= this.compactBytes))
+      this.scheduleCompaction(docName);
   }
 
   private scheduleCompaction(docName: string): void {
@@ -642,50 +697,63 @@ export class IndexedDbDocStore implements DocStore {
     this.compactTimers.set(docName, timer);
   }
 
+  /**
+   * Reads a doc's records, merges them off the main thread, then replaces exactly those records
+   * with the result, in one readwrite transaction and only if every one of them is still there.
+   * Records stored meanwhile (here or in another tab) are kept; a compaction or delete that got
+   * there first (their keys are gone, and keys are never reused) leaves the doc as it is.
+   */
   private async runCompaction(docName: string): Promise<void> {
-    const db = this.requireDb();
-    const transaction = db.transaction(STORES.updates, 'readwrite', { durability: 'strict' });
-    const done = transactionDone(transaction);
-    const store = transaction.objectStore(STORES.updates);
-    const keys: IDBValidKey[] = [];
-    const updates: Uint8Array[] = [];
+    const range = IDBKeyRange.only(docName);
+    const read = this.requireDb().transaction(STORES.updates, 'readonly');
+    const index = read.objectStore(STORES.updates).index(DOC_INDEX);
+    // One transaction: the keys and the values come from the same snapshot, in the same order.
+    const [keys, records] = await Promise.all([
+      requestToPromise(index.getAllKeys(range)),
+      requestToPromise(index.getAll(range)),
+    ]);
+    if (keys.length < 2) {
+      this.counts.set(docName, keys.length);
+      return;
+    }
+    const appendedAtRead = this.appended.get(docName) ?? 0;
+    const updates = records
+      .map((record) => asBytes((record as Partial<UpdateRecord> | null)?.update))
+      .filter((update): update is Uint8Array => update !== null);
+    let merged: Uint8Array;
+    try {
+      merged = await this.merger.compact(updates);
+    } catch (error) {
+      const err = asError(error);
+      if (!this.disposed) this.errors.emit('compact', err, docName);
+      throw err;
+    }
+
+    const write = this.requireDb().transaction(STORES.updates, 'readwrite', {
+      durability: 'strict',
+    });
+    const done = transactionDone(write);
+    const store = write.objectStore(STORES.updates);
     let remaining: number | null = null;
-    let failure: Error | null = null;
-    const request = store.index(DOC_INDEX).openCursor(IDBKeyRange.only(docName));
-    request.onsuccess = () => {
-      const cursor = request.result;
-      if (cursor) {
-        keys.push(cursor.primaryKey);
-        const update = asBytes((cursor.value as Partial<UpdateRecord> | null)?.update);
-        if (update) updates.push(update);
-        cursor.continue();
-        return;
-      }
-      if (keys.length < 2) {
-        remaining = keys.length;
-        return;
-      }
-      // Still inside the transaction: nothing else can write this store until it commits.
-      let merged: Uint8Array;
-      try {
-        merged = compactUpdates(updates);
-      } catch (error) {
-        failure = asError(error);
-        transaction.abort();
-        return;
-      }
+    const current = store.index(DOC_INDEX).getAllKeys(range);
+    current.onsuccess = () => {
+      const present = new Set(current.result);
+      if (!keys.every((key) => present.has(key))) return;
       for (const key of keys) store.delete(key);
       store.add({ doc: docName, update: merged } satisfies UpdateRecord);
-      remaining = 1;
+      remaining = present.size - keys.length + 1;
     };
     try {
       await done;
     } catch (error) {
-      const err = failure ?? asError(error);
+      const err = asError(error);
       this.errors.emit('compact', err, docName);
       throw err;
     }
-    if (remaining !== null) this.counts.set(docName, remaining);
+    if (remaining === null) return;
+    this.counts.set(docName, remaining);
+    // What was stored after the read is still separate records.
+    this.appended.set(docName, Math.max(0, (this.appended.get(docName) ?? 0) - appendedAtRead));
   }
 
   // Lifecycle.
