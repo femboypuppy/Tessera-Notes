@@ -107,6 +107,41 @@ test.describe('graph view', () => {
     expect(count).toBeLessThan(withoutOrphans);
   });
 
+  test('a large graph follows the pointer when dragged, and the drag is not a click', async ({
+    page,
+  }) => {
+    await openWorkspace(page);
+    // Over 3,000 pages counts as large: without a GPU (as in CI), it pans by moving the image.
+    const { hub } = await page.evaluate(() => {
+      const hooks = window.__tesseraSearch;
+      if (!hooks) throw new Error('search test hooks are not installed');
+      return hooks.stressGraph(3_500);
+    });
+    await openGraph(page);
+    const graph = page.getByRole('img', { name: /Graph view: 3,500 pages/ });
+    await expect(graph).toBeVisible({ timeout: 60_000 });
+    await settled(page);
+    const before = await nodePosition(page, hub);
+    // Starts on a node: a drag from a node pans too, and the release must not open the page.
+    await page.mouse.move(before.x, before.y);
+    await page.mouse.down();
+    for (let step = 1; step <= 20; step += 1) {
+      await page.mouse.move(before.x - step * 6, before.y + step * 4);
+    }
+    // Rests before releasing (longer than sigma's 100 ms drag timeout): released on the move, the
+    // graph would glide on past the pointer where sigma pans it (with a GPU).
+    await page.waitForTimeout(300);
+    await page.mouse.up();
+    await expect
+      .poll(async () => {
+        const after = await nodePosition(page, hub);
+        return [Math.round(after.x - before.x), Math.round(after.y - before.y)];
+      })
+      .toEqual([-120, 80]);
+    await expect(page.getByRole('textbox', { name: 'Page title' })).toHaveCount(0);
+    await expect(graph).toBeVisible();
+  });
+
   test('the local graph shows the page and its neighbors', async ({ page }) => {
     await openWorkspace(page);
     const pages = await seed(page, 60, 5);

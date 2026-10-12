@@ -193,8 +193,13 @@ own `RichSearchHit` and `RichBacklink` types) and would simply move them into co
 - **The first full index of a large workspace** takes ~1–2 ms per page in the worker (5,000 pages:
   ~5–10 s on this machine) with "Indexing N of M" in the palette; titles are searchable at once.
 - **Graph layout of 10,000 nodes** takes ~40 s to settle (in the worker; the page stays at 60 fps).
-- **Without a GPU** (headless browsers use SwiftShader), a 10,000-node graph renders slowly; the
-  numbers below were measured with the GPU. 300-page graphs are fine either way.
+- **Without a GPU** (headless browsers use SwiftShader, Linux without a driver uses llvmpipe),
+  redrawing a 10,000-node graph takes about 220 ms: with software compositing every frame reads
+  each WebGL layer back, and the readback waits for the nodes to be drawn on the CPU. So a large
+  graph (over 3,000 pages or 6,000 links) on a software renderer pans by moving the drawn layers
+  with a CSS transform and is redrawn once on release (`image-pan.ts`, #96): panning, settled,
+  p95 33 ms instead of 267 ms. Zooming and highlighting still redraw, so each wheel step or hover
+  highlight takes a fifth of a second there. 300-page graphs are fine either way.
 - **Firefox e2e under heavy load**: with many parallel workers on a busy machine, Firefox runs hit
   context-close timeouts (Firefox logs `RenderCompositorSWGL failed mapping default framebuffer`);
   this affected the Architect's shell, smoke and page-tree specs as well. The last full run
@@ -226,8 +231,8 @@ own `RichSearchHit` and `RichBacklink` types) and would simply move them into co
   exists for manual rebuilds.
 - **CI (09)**: `pnpm --filter @tessera/search bench` runs the benchmark (exits non-zero over budget);
   `pnpm exec playwright test -c e2e/search/perf.config.ts` runs the browser performance checks
-  (they pass GPU flags for Windows; on Linux CI set `PERF_SOFTWARE_GL=1` and expect slower graph
-  frames).
+  (they pass GPU flags for Windows; `PERF_SOFTWARE_GL=1` keeps the software renderer, as on
+  Linux CI, where the Nightly workflow runs them).
 - **Docs (10)**: query syntax above; screenshots below.
 - **Architect**: `PageView` renders `pageFooterSections` and `pageTopSections` without a `Suspense`
   boundary, so a lazy section would suspend the page; mine is a light host with its own

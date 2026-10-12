@@ -467,8 +467,9 @@ On a production build with the GPU, a 10,000-node graph pans and hovers at p95 1
 laid out, but one run measured p95 100 ms while the layout was still running
 (`e2e/search/perf.config.ts`). Without a GPU (headless Chromium, SwiftShader), `scripts/bench`
 measures 415 ms p95 at 5,000 pages (102 ms with `--headed`, in its dev-mode harness). Laying out
-10,000 nodes takes about 40 s to settle (in a worker). **Next:** send positions less often during
-layout, and reduce draw work on software renderers (fewer labels, no edge antialiasing).
+10,000 nodes takes about 40 s to settle (in a worker). Since #96, a large graph pans without
+redrawing on software renderers (`HANDOFF/search.md`). **Next:** send positions less often during
+layout.
 
 #### The Mermaid plugin loads 5.2 MB per block frame
 Labels: `performance`, `plugins`

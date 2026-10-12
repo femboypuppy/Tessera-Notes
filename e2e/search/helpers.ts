@@ -17,6 +17,7 @@ interface Hooks {
   ): Promise<void>;
   readDoc(pageId: string): Promise<unknown>;
   whenIndexed(): Promise<void>;
+  stressGraph(pages: number, seed?: number): { nodes: number; edges: number; hub: string };
 }
 
 declare global {

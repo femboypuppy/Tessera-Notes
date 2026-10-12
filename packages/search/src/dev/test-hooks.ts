@@ -43,9 +43,9 @@ export interface SearchTestHooks {
   /**
    * Makes the graph view show a generated graph of `pages` nodes instead of the workspace (for
    * performance runs with more pages than the in-memory workspace can hold quickly). Returns its
-   * size; `clearGraphStress` undoes it.
+   * size and its most linked page; `clearGraphStress` undoes it.
    */
-  stressGraph(pages: number, seed?: number): { nodes: number; edges: number };
+  stressGraph(pages: number, seed?: number): { nodes: number; edges: number; hub: string };
   clearGraphStress(): void;
 }
 
@@ -128,7 +128,14 @@ export function installTestHooks(ctx: AppContext): () => void {
     stressGraph(pages, seed = 7) {
       const snapshot = generatedSnapshot(generateWorkspace({ pages, seed }));
       (globalThis as { __tesseraGraphStress?: GraphSnapshot }).__tesseraGraphStress = snapshot;
-      return { nodes: snapshot.nodes.length, edges: snapshot.edges.length };
+      const degree = new Map<string, number>();
+      for (const { source, target } of snapshot.edges) {
+        degree.set(source, (degree.get(source) ?? 0) + 1);
+        degree.set(target, (degree.get(target) ?? 0) + 1);
+      }
+      let hub = snapshot.nodes[0]?.id ?? '';
+      for (const [id, count] of degree) if (count > (degree.get(hub) ?? 0)) hub = id;
+      return { nodes: snapshot.nodes.length, edges: snapshot.edges.length, hub };
     },
     clearGraphStress() {
       delete (globalThis as { __tesseraGraphStress?: GraphSnapshot }).__tesseraGraphStress;
