@@ -9,6 +9,7 @@ import type { CurrentUser } from '../runtime/user';
 import type { AssetStore } from './asset-store';
 import type { CredentialStore } from './credential-store';
 import type { DocStore } from './doc-store';
+import type { FileSaver } from './file-saver';
 import type { LinkIndex } from './link-index';
 import type { MarkdownCodec } from './markdown-codec';
 import type { SearchIndex } from './search-index';
@@ -33,6 +34,7 @@ export interface ServiceMap {
   workspaceRegistry: WorkspaceRegistry;
   markdownCodec: MarkdownCodec;
   credentialStore: CredentialStore;
+  fileSaver: FileSaver;
   docStore: DocStore;
   assetStore: AssetStore;
   syncProvider: SyncProvider;
@@ -52,6 +54,7 @@ export const SERVICE_PHASES = {
   workspaceRegistry: 'app',
   markdownCodec: 'app',
   credentialStore: 'app',
+  fileSaver: 'app',
   docStore: 'storage',
   assetStore: 'storage',
   syncProvider: 'storage',

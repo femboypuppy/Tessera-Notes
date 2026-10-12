@@ -167,6 +167,11 @@ export const en = {
   exportingTitle: 'Exporting…',
   exportDoneTitle: 'Export ready',
   exportDoneHint: '{name} ({size}) was downloaded.',
+  exportSavedHint: '{name} ({size}) was saved to {path}.',
+  exportSavingHint: 'Saving {name}…',
+  exportNotSavedHint: '{name} was not saved.',
+  saveAs: 'Save as…',
+  saveFailedTitle: 'The file could not be saved',
   exportFilesWritten_one: '{count} file',
   exportFilesWritten_other: '{count} files',
   downloadAgain: 'Download again',
@@ -196,6 +201,9 @@ export const en = {
   settingsBackupHint:
     'A JSON backup holds every page, database and attachment. Restore it into a new workspace.',
   downloadBackup: 'Download backup',
+  saveBackup: 'Save backup…',
+  backupSaved: 'Backup saved to {path}',
+  printFailedToast: 'The print dialog could not be opened',
   restoreBackup: 'Restore a backup…',
 
   // Onboarding

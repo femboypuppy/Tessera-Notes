@@ -139,8 +139,8 @@ the 45 s test timeout). A failure is re-run alone before it counts as fixed or f
 - `AssetStore.getInfo` in the IndexedDB and server stores. ✅ Both implement it, and the desktop's.
 - The desktop mirror through the exporter. ✅ `MIRROR_EXPORTERS` picks `markdown`; Settings →
   Desktop shows "Updated now · 7 files" in the screenshot run.
-- Downloads and printing inside the desktop webview. ➡️ Issue "Desktop: export downloads and
-  printing in the webview".
+- Downloads and printing inside the desktop webview. ✅ In 0.1.3 (#30), through the `fileSaver`
+  service: the native save dialog and the webview's own print.
 - "Open demo workspace" from `examples/demo-workspace`; the bundled demo deleted. ✅ `demo.test.ts`
   (no import issues, 200+ links resolve, images in the asset store, typed databases).
 - Nightly 2,000-note benchmark. ➡️ Issue "CI: nightly performance and load jobs".

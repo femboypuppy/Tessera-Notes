@@ -11,6 +11,7 @@ import type {
   PrefsPatch,
   RegistryEntry,
   RegistryItem,
+  SavedFileInfo,
   ServerEntry,
   UpdateInfo,
   UpdateProgress,
@@ -51,6 +52,17 @@ export interface DesktopBackend {
   /** Native "choose a folder" dialog. Null when cancelled. */
   pickFolder(title: string, defaultPath?: string): Promise<string | null>;
   revealFolder(path: string): Promise<void>;
+
+  /**
+   * Native "save as" dialog suggesting `name`, then writes `bytes` where the user chose. Null when
+   * cancelled. `filter` labels the file type of `name`'s extension in the dialog.
+   */
+  saveFile(
+    bytes: Uint8Array,
+    options: { name: string; title: string; filter: string | null },
+  ): Promise<SavedFileInfo | null>;
+  /** Opens the system print dialog for this window's page (the webview's native print). */
+  print(): Promise<void>;
 
   attachWorkspace(workspaceId: string, path: string, name: string): Promise<WorkspaceStatus>;
   detachWorkspace(workspaceId: string): Promise<void>;

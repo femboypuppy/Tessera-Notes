@@ -15,7 +15,7 @@ import { existingBackReferenceIndex } from '../model/back-references';
 import { runQuery } from '../query/run';
 import { createQueryContext } from '../query/types';
 import { displayLocale } from '../ui/common';
-import { downloadText, exportColumns } from '../ui/csv/export-item';
+import { exportColumns, saveText } from '../ui/csv/export-item';
 import { activeViewKey } from '../view-setting';
 
 /**
@@ -77,10 +77,12 @@ export async function exportDatabaseCsv(ctx: AppContext, databaseId: string): Pr
       return;
     }
     const title = pages.get(databaseId)?.title.trim() || t('untitledDatabase');
-    downloadText(
+    const saved = await saveText(
+      ctx,
       rowsToCsv(rows, exportColumns(properties, view), queryCtx),
       csvFileName(title, view.name || viewTypeName(view.type)),
     );
+    if (!saved) return;
     ctx.toast({ variant: 'success', title: t('exportCsvDone', { count: rows.length }) });
   } finally {
     handle.release();

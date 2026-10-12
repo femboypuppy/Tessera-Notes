@@ -420,6 +420,87 @@ pub async fn folder_reveal(app: AppHandle, path: String) -> Result<()> {
 }
 
 // ---------------------------------------------------------------------------------------------
+// Exports: saving files and printing
+// ---------------------------------------------------------------------------------------------
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SavedFile {
+    name: String,
+    path: String,
+}
+
+/// Saves an export: the native save dialog asks where (suggesting `x-tessera-name` in the
+/// Downloads folder), then the body is written there atomically. `None` when the user cancels.
+/// Webviews ignore `<a download>`, so exports in the desktop app always come through here; the
+/// path comes from the dialog only, never from the page.
+#[tauri::command]
+pub async fn file_save(
+    app: AppHandle,
+    webview: Webview,
+    request: Request<'_>,
+) -> Result<Option<SavedFile>> {
+    use tauri_plugin_dialog::DialogExt;
+    let name = validate::suggested_file_name(&header(&request, "x-tessera-name")?);
+    let title: String = header(&request, "x-tessera-title")?
+        .chars()
+        .filter(|c| !c.is_control())
+        .take(200)
+        .collect();
+    let filter: Option<String> = optional_header(&request, "x-tessera-filter")?.map(|label| {
+        label
+            .chars()
+            .filter(|c| !c.is_control())
+            .take(100)
+            .collect()
+    });
+    let bytes = body(&request)?;
+    let label = webview.label().to_string();
+    blocking(move || {
+        let mut dialog = app
+            .dialog()
+            .file()
+            .set_title(title)
+            .set_file_name(name.clone())
+            .set_can_create_directories(true);
+        if let Some(window) = app.get_webview_window(&label) {
+            dialog = dialog.set_parent(&window);
+        }
+        if let Ok(downloads) = app.path().download_dir() {
+            if downloads.is_dir() {
+                dialog = dialog.set_directory(downloads);
+            }
+        }
+        if let (Some(label), Some(extension)) = (filter, validate::extension(&name)) {
+            dialog = dialog.add_filter(label, &[extension]);
+        }
+        let Some(chosen) = dialog.blocking_save_file() else {
+            return Ok(None);
+        };
+        let path = chosen
+            .into_path()
+            .map_err(|e| Error::Invalid(e.to_string()))?;
+        crate::config::write_atomic(&path, &bytes)?;
+        Ok(Some(SavedFile {
+            name: path
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or(name),
+            path: path.to_string_lossy().into_owned(),
+        }))
+    })
+    .await
+}
+
+/// Opens the system print dialog for the calling webview. WKWebView ignores `window.print()`,
+/// so printing goes through the webview's native print on every OS.
+#[tauri::command]
+pub async fn window_print(webview: Webview) -> Result<()> {
+    webview.print()?;
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------------------------
 // Workspaces
 // ---------------------------------------------------------------------------------------------
 

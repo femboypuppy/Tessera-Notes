@@ -28,6 +28,8 @@
     "allow-folder-suggest",
     "allow-folder-pick",
     "allow-folder-reveal",
+    "allow-file-save",
+    "allow-window-print",
     "allow-workspace-attach",
     "allow-workspace-detach",
     "allow-workspace-status",

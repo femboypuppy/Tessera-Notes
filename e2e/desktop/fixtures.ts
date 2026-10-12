@@ -50,6 +50,24 @@ export async function queuePick(page: Page, path: string | null): Promise<void> 
   );
 }
 
+/** Answers the next native save dialog with a path (null = cancelled). */
+export async function queueSave(page: Page, path: string | null): Promise<void> {
+  await page.evaluate(
+    (path) => (window as unknown as { __fakeTauri: FakeTauriHandle }).__fakeTauri.queueSave(path),
+    path,
+  );
+}
+
+/** The text of a file written through the native save dialog. */
+export async function savedText(page: Page, path: string): Promise<string | null> {
+  return page.evaluate((path) => {
+    const data = (window as unknown as { __fakeTauri: FakeTauriHandle }).__fakeTauri.state
+      .savedFiles[path];
+    if (data === undefined) return null;
+    return new TextDecoder().decode(Uint8Array.from(atob(data), (c) => c.charCodeAt(0)));
+  }, path);
+}
+
 /** Simulates a click on a native menu item (Rust emits `desktop://menu`). */
 export async function clickMenu(page: Page, id: string): Promise<void> {
   await page.evaluate(

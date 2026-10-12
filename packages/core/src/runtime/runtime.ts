@@ -113,6 +113,7 @@ export interface AppRuntime {
   readonly workspaceRegistry: ServiceMap['workspaceRegistry'];
   readonly markdownCodec: ServiceMap['markdownCodec'];
   readonly credentialStore: ServiceMap['credentialStore'];
+  readonly fileSaver: ServiceMap['fileSaver'];
   /** Which implementation each app service resolved to. */
   readonly appServiceSources: Readonly<Partial<Record<ServiceKey, string>>>;
   getCurrentUser(): CurrentUser;
@@ -222,6 +223,16 @@ export async function createAppRuntime(options: AppRuntimeOptions): Promise<AppR
     },
     { onError: onServiceError },
   );
+  const files = await resolveService(
+    'fileSaver',
+    registrations,
+    appContext,
+    {
+      id: 'download',
+      create: async () => new (await import('../services/file-saver')).DownloadFileSaver(),
+    },
+    { onError: onServiceError },
+  );
 
   const sessions = new Set<WorkspaceSession>();
 
@@ -232,10 +243,12 @@ export async function createAppRuntime(options: AppRuntimeOptions): Promise<AppR
     workspaceRegistry: registry.service,
     markdownCodec: codec.service,
     credentialStore: credentials.service,
+    fileSaver: files.service,
     appServiceSources: {
       workspaceRegistry: registry.source,
       markdownCodec: codec.source,
       credentialStore: credentials.source,
+      fileSaver: files.source,
     },
     getCurrentUser,
     updateCurrentUser(patch) {
@@ -537,6 +550,7 @@ async function openWorkspaceSession(input: SessionInput): Promise<WorkspaceSessi
     workspaceRegistry: runtime.workspaceRegistry,
     markdownCodec: runtime.markdownCodec,
     credentialStore: runtime.credentialStore,
+    fileSaver: runtime.fileSaver,
     docStore: docStore.service,
     assetStore: assetStore.service,
     syncProvider: syncProvider.service,
