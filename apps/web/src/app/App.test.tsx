@@ -119,6 +119,36 @@ describe('the app shell', () => {
     expect(await screen.findByText('The trash is empty')).toBeInTheDocument();
   });
 
+  it('sorts trashed pages by deletion time or title', async () => {
+    const user = userEvent.setup();
+    const sidebar = await createWorkspace(user, 'Trash sorting');
+    for (const title of ['Alpha', 'Gamma', 'Beta']) {
+      await createPage(user, sidebar, title);
+      await user.click(screen.getByRole('button', { name: 'Page actions' }));
+      await user.click(await screen.findByRole('menuitem', { name: 'Move to trash' }));
+      await screen.findByText(`Moved “${title}” to the trash`);
+    }
+
+    await user.click(within(sidebar).getByRole('button', { name: 'Trash' }));
+    await screen.findByRole('heading', { name: 'Trash', level: 1 });
+    const getRowTitles = () => screen.getByRole('list', { name: 'Trash' }).querySelectorAll('li');
+    const titles = () =>
+      Array.from(getRowTitles()).map((row) => row.querySelector('span')?.textContent);
+    const sort = screen.getByRole('combobox', { name: 'Sort trashed pages' });
+
+    await user.click(sort);
+    await user.click(await screen.findByRole('option', { name: 'Newest first' }));
+    expect(titles()).toEqual(['Beta', 'Gamma', 'Alpha']);
+
+    await user.click(sort);
+    await user.click(await screen.findByRole('option', { name: 'Oldest first' }));
+    expect(titles()).toEqual(['Alpha', 'Gamma', 'Beta']);
+
+    await user.click(sort);
+    await user.click(await screen.findByRole('option', { name: 'Title' }));
+    expect(titles()).toEqual(['Alpha', 'Beta', 'Gamma']);
+  });
+
   it('nests, un-nests and reorders pages from the keyboard', async () => {
     const user = userEvent.setup();
     const sidebar = await createWorkspace(user, 'Garden');
