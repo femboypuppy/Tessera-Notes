@@ -4,6 +4,109 @@ Every release of Tessera, newest first. Each one opens with what matters to peop
 followed by every change, generated from the commit history
 ([Conventional Commits](https://www.conventionalcommits.org/)).
 
+## 0.1.3 (2026-10-14)
+
+**Tessera Notes 0.1.3 makes deleting a page for good hold on every device, makes exports work in the
+desktop app, and opens large workspaces faster.** It's the first release the desktop app can install
+by itself: 0.1.2 finds it with **Check for updates…** and asks before installing it. Your data and
+settings carry over unchanged. Upgrading is recommended.
+
+### Highlights
+
+- **Pages deleted for good stay deleted everywhere.**
+  - A page you delete permanently on one device no longer lingers on another device that was offline
+    at the time: that device drops its copy the next time it syncs.
+  - Relations that pointed to a deleted page are cleaned up by whichever device opens the workspace
+    next, even when the tab that deleted the page closed right away. Workspaces that already have
+    such leftovers are cleaned up the same way.
+- **Exports work in the desktop app.** Exporting pages, the JSON backup in Settings and a database's
+  CSV export open your system's save dialog and tell you where the file went; **Save as…** saves
+  another copy. PDF export prints through the app. Before, these did nothing in the desktop app.
+- **Large workspaces open faster.** Opening a workspace with 5,000 imported notes blocked the app
+  for up to 470 ms; now the longest pause is about 200 ms. Large documents are merged in the
+  background, and they're kept compact after a big import.
+- **The graph pans smoothly without a graphics card.** On a computer without a usable GPU, dragging
+  a graph of thousands of pages now follows the pointer (frames about 33 ms instead of 200–270 ms),
+  and the graph redraws once you let go.
+- **Escape closes one thing at a time.** Pressing Escape while a menu or popover is still closing no
+  longer closes the dialog behind it as well.
+- **Callout titles keep their line breaks** when you export to markdown and import it again.
+
+Also: the Docker image's arm64 build now runs natively instead of under emulation, where it could
+hang for an hour; four security alerts in build and documentation dependencies are fixed; and
+contributors on Windows get instructions for cloning into deep folders.
+
+### Closed issues
+
+- [#7](https://github.com/femboypuppy/Tessera-Notes/issues/7) Relation cleanup can leave dangling IDs if the tab closes right after a permanent delete
+- [#8](https://github.com/femboypuppy/Tessera-Notes/issues/8) Escape during a popover's exit animation needs a second press
+- [#10](https://github.com/femboypuppy/Tessera-Notes/issues/10) Orphaned local docs after a permanent delete on another device
+- [#11](https://github.com/femboypuppy/Tessera-Notes/issues/11) Windows: long fixture paths need `core.longpaths` to clone into deep folders
+- [#30](https://github.com/femboypuppy/Tessera-Notes/issues/30) Desktop: export downloads and printing in the webview
+- [#33](https://github.com/femboypuppy/Tessera-Notes/issues/33) CI: nightly performance and load jobs
+- [#35](https://github.com/femboypuppy/Tessera-Notes/issues/35) Drop Firefox's COOP preference when upgrading to Playwright 1.64
+- [#55](https://github.com/femboypuppy/Tessera-Notes/issues/55) Labeler and Dependabot: the first runs
+- [#56](https://github.com/femboypuppy/Tessera-Notes/issues/56) Docker: the arm64 build can hang under emulation until the job's 60-minute timeout
+- [#66](https://github.com/femboypuppy/Tessera-Notes/issues/66) Opening a large workspace blocks the main thread while its workspace doc loads
+- [#87](https://github.com/femboypuppy/Tessera-Notes/issues/87) Markdown: a line break in a callout's title moves the rest out of the title
+- [#96](https://github.com/femboypuppy/Tessera-Notes/issues/96) Graph: panning 10,000 nodes without a GPU takes 200 ms per frame (p95)
+
+### Upgrade
+
+- **Desktop 0.1.2:** choose **Check for updates…** (Help menu; the Tessera menu on macOS), or wait
+  for the app to offer 0.1.3, and install it; the app restarts on 0.1.3.
+- **Desktop 0.1.0 or 0.1.1:** download the file for your system below and install it over your
+  version. From then on the app updates itself.
+- **Docker:** `docker pull ghcr.io/femboypuppy/tessera:0.1.3`, then recreate the container with the
+  same volume; your data stays. `latest` points to 0.1.3 too.
+- **In the browser:** once your server runs 0.1.3, reload Tessera.
+- **Plugins:** nothing changed for plugins; plugins made for 0.1.2 keep working.
+
+| System | File |
+| --- | --- |
+| macOS (Apple silicon) | `Tessera_0.1.3_aarch64.dmg` |
+| macOS (Intel) | `Tessera_0.1.3_x64.dmg` |
+| Windows | `Tessera_0.1.3_x64-setup.exe` or `Tessera_0.1.3_x64_en-US.msi` |
+| Linux | `Tessera_0.1.3_amd64.AppImage`, `.deb` or `.rpm` |
+
+`SHA256SUMS.txt` lists every file's checksum. The desktop apps aren't signed with a developer
+certificate yet, so the first launch asks for your permission: on macOS, choose **Open Anyway** in
+System Settings → Privacy & Security; on Windows, **More info** → **Run anyway**.
+
+### Bug fixes
+
+- **memory:** take every soak sample on the same page (#102) ([`7ef7955`](https://github.com/femboypuppy/Tessera-Notes/commit/7ef79552d43d1031e34c1331557dbe64f26c03ca))
+- **search:** pan large graphs without a GPU by moving the drawn image (#99) ([`5f904aa`](https://github.com/femboypuppy/Tessera-Notes/commit/5f904aae0d8d2c8338af3c09d39772dd991f6259))
+- **deps:** patched source-map-js and DOMPurify for four Dependabot alerts (#94) ([`8c33cac`](https://github.com/femboypuppy/Tessera-Notes/commit/8c33cac35cdb03956fac96e0175d11fd01692488))
+- **desktop:** save exports through the native save dialog, and print through the webview (#90) ([`8d747b8`](https://github.com/femboypuppy/Tessera-Notes/commit/8d747b81d0ce801e16bb152845c0cc0038fb5f59))
+- **markdown:** keep line breaks in callout titles (#88) ([`1cace94`](https://github.com/femboypuppy/Tessera-Notes/commit/1cace945e58bec3835e03fbc72c5964a92e6c0ee))
+- **sync:** drop local copies of pages deleted for good on another device (#86) ([`c0d2d40`](https://github.com/femboypuppy/Tessera-Notes/commit/c0d2d4039d2befa86c07d87e4191080739ea9462))
+- **ui:** Escape during a popover's exit animation closes the layer under it (#85) ([`fbdc7da`](https://github.com/femboypuppy/Tessera-Notes/commit/fbdc7daf6c3ef15039b87f71b0d47e2812e4cda0))
+- **databases:** any client finishes removing deleted pages from relations, at startup too (#83) ([`b67324c`](https://github.com/femboypuppy/Tessera-Notes/commit/b67324cc03c44d456b846a7d0bcbefb686d8b98a))
+
+### Performance
+
+- **sync:** merge large docs off the main thread, and compact them by size too (#98) ([`4ed27a4`](https://github.com/femboypuppy/Tessera-Notes/commit/4ed27a44bd717d9bd6e16d0014897decf8d2b3cc))
+
+### Documentation
+
+- **contributing:** clone on Windows with long paths, and keep tracked paths short (#92) ([`107ee2f`](https://github.com/femboypuppy/Tessera-Notes/commit/107ee2faf8fa596d2cae349f47b11b32bfb15565))
+- **release:** one line per paragraph and list item in the release notes ([`bc500ff`](https://github.com/femboypuppy/Tessera-Notes/commit/bc500ff6f26df6c69fa47bc19f8a73be4bb7c8a4))
+
+<details>
+<summary><strong>Maintenance</strong> (6)</summary>
+
+- **nightly:** run the load test, the benchmarks, the search perf specs and the memory soak (#95) ([`ab7fdf5`](https://github.com/femboypuppy/Tessera-Notes/commit/ab7fdf53fc0d0ec58fcb2ffe21d8e983b080fe88))
+- **e2e:** upgrade Playwright to 1.64 and drop Firefox's COOP preference (#91) ([`09244b4`](https://github.com/femboypuppy/Tessera-Notes/commit/09244b4d680fc0ae08d267c0d29fcfa2d56ba27c))
+- **docker:** build arm64 natively, with step timeouts, instead of under QEMU (#84) ([`9c6f5ab`](https://github.com/femboypuppy/Tessera-Notes/commit/9c6f5abf082b435a5bdebbd6806cf6a449234d4f))
+- **deps:** Bump thiserror (#71) ([`b03bbc2`](https://github.com/femboypuppy/Tessera-Notes/commit/b03bbc20cb035643d913e1c5e1384a3664747bc9))
+- **deps:** Bump base64 in /apps/desktop/src-tauri (#73) ([`8f68f3a`](https://github.com/femboypuppy/Tessera-Notes/commit/8f68f3afd0929bf8dd43aba0895f2ea0930d7313))
+- **deps:** Bump the production group across 14 directories with 4 updates (#75) ([`e327aa0`](https://github.com/femboypuppy/Tessera-Notes/commit/e327aa09c25cf3a7f4c9477df2ca73e71cb975cf))
+
+</details>
+
+**Full changelog:** https://github.com/femboypuppy/Tessera-Notes/compare/v0.1.2...v0.1.3
+
 ## 0.1.2 (2026-09-27)
 
 **Tessera Notes 0.1.2 makes the plugin browser work, fixes the editor's rough edges when several
