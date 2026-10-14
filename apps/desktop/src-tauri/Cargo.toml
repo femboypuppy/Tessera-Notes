@@ -15,7 +15,7 @@ name = "tessera_desktop_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
-tauri-build = { version = "=2.6.3", features = [] }
+tauri-build = { version = "=2.7.1", features = [] }
 
 [dependencies]
 # Keep `tauri` on the same minor as `@tauri-apps/api` (apps/desktop/package.json).
