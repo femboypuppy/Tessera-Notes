@@ -23,6 +23,7 @@
   <a href="https://github.com/femboypuppy/Tessera-Notes/stargazers"><img src="https://img.shields.io/github/stars/femboypuppy/Tessera-Notes?style=flat&logo=github" alt="GitHub stars" width="85" height="20"></a>
   <a href="https://github.com/femboypuppy/Tessera-Notes/forks"><img src="https://img.shields.io/github/forks/femboypuppy/Tessera-Notes?style=flat&logo=github" alt="GitHub forks" width="89" height="20"></a>
   <a href="https://github.com/femboypuppy/Tessera-Notes/releases/latest"><img src="https://img.shields.io/github/v/release/femboypuppy/Tessera-Notes?include_prereleases&sort=semver" alt="Latest release" width="94" height="20"></a>
+  <a href="https://github.com/femboypuppy/Tessera-Notes/releases"><img src="https://img.shields.io/github/downloads/femboypuppy/Tessera-Notes/total" alt="Downloads" width="92" height="20"></a>
   <a href="https://github.com/femboypuppy/Tessera-Notes/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/femboypuppy/Tessera-Notes/ci.yml?branch=main&label=CI" alt="CI status" width="74" height="20"></a>
   <a href="LICENSE"><img src="https://img.shields.io/github/license/femboypuppy/Tessera-Notes" alt="License: MIT" width="108" height="20"></a>
   <a href="https://github.com/femboypuppy/Tessera-Notes/pkgs/container/tessera"><img src="https://img.shields.io/badge/docker-ghcr.io-2496ED?logo=docker&logoColor=white" alt="Docker image on GitHub Container Registry" width="111" height="20"></a>

@@ -110,6 +110,7 @@ test('README top: centered logo, tagline, badges, quick links and the demo, kept
     'img.shields.io/github/stars/femboypuppy/Tessera-Notes',
     'img.shields.io/github/forks/femboypuppy/Tessera-Notes',
     'img.shields.io/github/v/release/femboypuppy/Tessera-Notes',
+    'img.shields.io/github/downloads/femboypuppy/Tessera-Notes/total',
     'img.shields.io/github/actions/workflow/status/femboypuppy/Tessera-Notes/ci.yml',
     'img.shields.io/github/license/femboypuppy/Tessera-Notes',
     'img.shields.io/badge/docker-ghcr.io',
