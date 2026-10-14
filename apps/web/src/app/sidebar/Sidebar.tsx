@@ -18,11 +18,17 @@ import {
   SidebarSection,
   sidebarItemClass,
 } from '@tessera/ui';
-import { ChevronsLeft, Plus, Search, Settings, SquarePen, Trash2 } from 'lucide-react';
+import { ChevronsLeft, ChevronsUp, Plus, Search, Settings, SquarePen, Trash2 } from 'lucide-react';
 import { useRef, type KeyboardEvent, type PointerEvent } from 'react';
 import { useLocation, useNavigate } from 'react-router';
 import { t } from '../../i18n';
-import { displayTitle, PageIcon, createPageAndOpen, useViewOnly } from '../page-helpers';
+import {
+  displayTitle,
+  PageIcon,
+  createPageAndOpen,
+  requestCollapseAllPages,
+  useViewOnly,
+} from '../page-helpers';
 import { SIDEBAR_MAX_WIDTH, SIDEBAR_MIN_WIDTH, useUiStore } from '../ui-store';
 import { PageTree } from './PageTree';
 import { WorkspaceSwitcher } from './WorkspaceSwitcher';
@@ -179,14 +185,22 @@ export function Sidebar({ resizable = false }: { resizable?: boolean }) {
           <SidebarSection
             title={t('pages')}
             action={
-              viewOnly ? undefined : (
+              <div className="flex items-center gap-1">
                 <IconButton
                   size="sm"
-                  label={t('newPage')}
-                  icon={<Plus />}
-                  onClick={() => createPageAndOpen(ctx, navigate)}
+                  label={t('collapseAll')}
+                  icon={<ChevronsUp />}
+                  onClick={() => requestCollapseAllPages(ctx.workspace.info.id)}
                 />
-              )
+                {viewOnly ? undefined : (
+                  <IconButton
+                    size="sm"
+                    label={t('newPage')}
+                    icon={<Plus />}
+                    onClick={() => createPageAndOpen(ctx, navigate)}
+                  />
+                )}
+              </div>
             }
           >
             <PageTree />

@@ -6,6 +6,26 @@ import type { NavigateFunction } from 'react-router';
 import { t } from '../i18n';
 import { useUiStore } from './ui-store';
 
+const pageTreeCollapseHandlers = new Map<string, () => void>();
+
+/** Requests that the mounted page tree for a workspace collapse its expanded pages. */
+export function requestCollapseAllPages(workspaceId: string): void {
+  pageTreeCollapseHandlers.get(workspaceId)?.();
+}
+
+/** Registers the page tree's collapse handler and returns its cleanup function. */
+export function registerPageTreeCollapseHandler(
+  workspaceId: string,
+  handler: () => void,
+): () => void {
+  pageTreeCollapseHandlers.set(workspaceId, handler);
+  return () => {
+    if (pageTreeCollapseHandlers.get(workspaceId) === handler) {
+      pageTreeCollapseHandlers.delete(workspaceId);
+    }
+  };
+}
+
 /** The title to display: the page's title, or "Untitled". */
 export function displayTitle(page: Pick<PageMeta, 'title'> | undefined | null): string {
   return page?.title.trim() ? page.title : t('untitled');

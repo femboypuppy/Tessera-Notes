@@ -49,6 +49,7 @@ import {
   pageUrl,
   trashWithUndo,
   createPageAndOpen,
+  registerPageTreeCollapseHandler,
   useViewOnly,
 } from '../page-helpers';
 import { useUiStore } from '../ui-store';
@@ -525,6 +526,12 @@ export function PageTree() {
   // Handlers read the pages as they are when they run; rendering follows the visible rows only.
   const pages = () => ctx.workspace.pages.getSnapshot();
   const rows = usePagesSelector((snapshot) => visibleRows(snapshot, expanded), sameRows);
+
+  useEffect(() => {
+    const workspaceId = ctx.workspace.info.id;
+    const handler = () => updateExpanded((next) => next.clear());
+    return registerPageTreeCollapseHandler(workspaceId, handler);
+  }, [ctx.workspace.info.id, updateExpanded]);
 
   // Reveal the open page: expand its ancestors.
   useEffect(() => {
