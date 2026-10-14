@@ -2,6 +2,7 @@ import type { SlashMenuItem } from '@tessera/core';
 import type { Editor } from '@tiptap/core';
 import {
   Bookmark,
+  CalendarDays,
   ChevronRight,
   FileSymlink,
   Heading1,
@@ -189,6 +190,18 @@ export function builtInSlashItems(): SlashItem[] {
       icon: Lightbulb,
       keywords: ['note', 'info', 'warning', 'tip', 'admonition', 'highlight'],
     }),
+    {
+      id: 'date',
+      group: 'basic',
+      title: t('blockDate'),
+      description: t('blockDateHint'),
+      icon: CalendarDays,
+      keywords: ['date', 'today', 'now'],
+      run: ({ editor }) => {
+        const date = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(new Date());
+        editor.chain().focus().insertContent(date).run();
+      },
+    },
     {
       id: 'divider',
       group: 'basic',
