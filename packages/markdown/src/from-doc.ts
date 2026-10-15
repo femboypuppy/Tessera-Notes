@@ -436,7 +436,7 @@ function calloutNode(node: AnyNodeJSON, ctx: Context): Flow[] {
       ...(title.length
         ? [
             { type: 'text', value: ' ' } as PhrasingContent,
-            ...breaksAsHtml(inlineToMdast(title, ctx)),
+            ...encodeEdgeWhitespace(breaksAsHtml(inlineToMdast(title, ctx))),
           ]
         : []),
     ],
