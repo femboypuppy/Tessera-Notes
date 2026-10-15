@@ -926,7 +926,7 @@ function convertBlockquote(node: Blockquote, ctx: Context): AnyNodeJSON {
     if (flow.quoteColor) quote.attrs = { color: flow.quoteColor };
     return quote;
   }
-  const remainder = firstChild.value.slice(header.length).replace(/^[ \t]+/, '');
+  const remainder = firstChild.value.slice(header.length).replace(/^[ \t]/, '');
   const firstChildren: PhrasingContent[] = remainder
     ? [{ type: 'text', value: remainder }, ...first.children.slice(1)]
     : first.children.slice(1);
@@ -1086,7 +1086,7 @@ function collectContainer(
   const trailingClose = new RegExp(`</${tag}\\s*>\\s*$`, 'i');
   const body: AnyNodeJSON[] = [];
   const parseNested = (markdown: string) => {
-    if (markdown.trim() && ctx.depth < 20) {
+    if (/[^ \t\r\n]/.test(markdown) && ctx.depth < 20) {
       ctx.depth += 1;
       body.push(
         ...withSource(
@@ -1165,7 +1165,9 @@ function convertToggle(
       bodyStart = start;
     }
   }
-  const summaryInline = summaryMarkdown.trim() ? inlineOfMarkdown(summaryMarkdown, ctx) : [];
+  const summaryInline = /[^ \t\r\n]/.test(summaryMarkdown)
+    ? inlineOfMarkdown(summaryMarkdown, ctx)
+    : [];
   const summaryNode: AnyNodeJSON = { type: 'toggleSummary' };
   if (summaryInline.length) summaryNode.content = summaryInline;
   const { body, consumed } = collectContainer(nodesForBody, bodyStart, 'details', rest, ctx);

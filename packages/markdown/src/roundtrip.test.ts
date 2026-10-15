@@ -130,4 +130,34 @@ describe('round trips (property-based)', () => {
     expect(parsed.warnings).toEqual([]);
     expect(docJSONEqual(parsed.doc, expected)).toBe(true);
   });
+
+  it('round trips a toggle whose summary is only whitespace or a no-break space', () => {
+    // Found by the property above (seed 2127033508): a toggle summary holding `\u00a0` was
+    // dropped by `summaryMarkdown.trim()` on parse, and a foldable callout's summary lost
+    // edge spaces unless encoded.
+    for (const text of ['\u00a0', ' ', ' a', 'a ']) {
+      const toggle: DocJSON['content'][number] = {
+        type: 'toggle',
+        content: [{ type: 'toggleSummary', content: [{ type: 'text', text }] }],
+        attrs: { open: false, blockId: null, color: null },
+      };
+      for (const doc of [
+        { type: 'doc', content: [toggle] } satisfies DocJSON,
+        {
+          type: 'doc',
+          content: [
+            {
+              type: 'callout',
+              attrs: { tone: 'default', emoji: '💡', blockId: null },
+              content: [toggle],
+            },
+          ],
+        } satisfies DocJSON,
+      ]) {
+        const markdown = codec.serialize(doc, { resolvePage: resolvers.resolvePage });
+        const parsed = codec.parse(markdown, { resolvePageLink: resolvers.resolvePageLink }).doc;
+        expect(docJSONEqual(parsed, doc), JSON.stringify(text)).toBe(true);
+      }
+    }
+  });
 });
