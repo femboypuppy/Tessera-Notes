@@ -290,4 +290,28 @@ describe('EmojiPicker', () => {
     await userEvent.type(search, 'zzzz-no-emoji');
     expect(await screen.findByText('No emoji found')).toBeInTheDocument();
   });
+
+  it('picks the first result of an Enter pressed while the emoji are still loading', async () => {
+    const onSelect = vi.fn();
+    render(<EmojiPicker onSelect={onSelect} />);
+    const search = screen.getByRole('searchbox', { name: 'Search emoji' });
+    expect(screen.getByText('Loading emoji…')).toBeInTheDocument();
+    fireEvent.change(search, { target: { value: 'rocket' } });
+    fireEvent.keyDown(search, { key: 'Enter' });
+    expect(onSelect).not.toHaveBeenCalled();
+    await waitFor(() => expect(onSelect).toHaveBeenCalledWith('🚀'));
+    expect(onSelect).toHaveBeenCalledTimes(1);
+  });
+
+  it('drops a pending Enter when the query changes before the emoji load', async () => {
+    const onSelect = vi.fn();
+    render(<EmojiPicker onSelect={onSelect} />);
+    const search = screen.getByRole('searchbox', { name: 'Search emoji' });
+    expect(screen.getByText('Loading emoji…')).toBeInTheDocument();
+    fireEvent.change(search, { target: { value: 'rocket' } });
+    fireEvent.keyDown(search, { key: 'Enter' });
+    fireEvent.change(search, { target: { value: 'pizza' } });
+    await screen.findByRole('button', { name: 'pizza' });
+    expect(onSelect).not.toHaveBeenCalled();
+  });
 });
