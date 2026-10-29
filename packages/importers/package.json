@@ -23,7 +23,7 @@
     "@tessera/markdown": "workspace:*",
     "@tessera/ui": "workspace:*",
     "character-entities": "2.0.2",
-    "dompurify": "3.4.16",
+    "dompurify": "3.4.17",
     "fflate": "0.8.3",
     "lucide-react": "1.48.0",
     "papaparse": "5.7.0",
