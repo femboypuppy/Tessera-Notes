@@ -27,7 +27,7 @@
     "@tessera/ui": "workspace:*",
     "lucide-react": "1.48.0",
     "yjs": "13.6.33",
-    "zod": "4.6.5"
+    "zod": "4.6.6"
   },
   "peerDependencies": {
     "react": "^19.0.0",
