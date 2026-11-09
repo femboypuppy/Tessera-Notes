@@ -108,8 +108,8 @@ importers:
         specifier: 13.6.33
         version: 13.6.33
       zod:
-        specifier: 4.6.5
-        version: 4.6.5
+        specifier: 4.6.6
+        version: 4.6.6
     devDependencies:
       '@tauri-apps/cli':
         specifier: 2.11.5
@@ -130,8 +130,8 @@ importers:
         specifier: 4.7.0
         version: 4.7.0(y-protocols@1.0.7(yjs@13.6.33))(yjs@13.6.33)
       '@hono/node-server':
-        specifier: 2.1.1
-        version: 2.1.1(hono@4.13.11)
+        specifier: 2.1.6
+        version: 2.1.6(hono@4.13.11)
       '@tessera/core':
         specifier: workspace:*
         version: link:../../packages/core
@@ -160,8 +160,8 @@ importers:
         specifier: 13.6.33
         version: 13.6.33
       zod:
-        specifier: 4.6.5
-        version: 4.6.5
+        specifier: 4.6.6
+        version: 4.6.6
     devDependencies:
       '@hocuspocus/provider':
         specifier: 4.7.0
@@ -236,8 +236,8 @@ importers:
         specifier: 13.6.33
         version: 13.6.33
       zod:
-        specifier: 4.6.5
-        version: 4.6.5
+        specifier: 4.6.6
+        version: 4.6.6
       zustand:
         specifier: 5.0.15
         version: 5.0.15(@types/react@19.3.0)(react@19.3.0)(use-sync-external-store@1.7.0(react@19.3.0))
@@ -291,8 +291,8 @@ importers:
         specifier: 13.6.33
         version: 13.6.33
       zod:
-        specifier: 4.6.5
-        version: 4.6.5
+        specifier: 4.6.6
+        version: 4.6.6
     devDependencies:
       '@testing-library/dom':
         specifier: 10.4.2
@@ -358,8 +358,8 @@ importers:
         specifier: 13.6.33
         version: 13.6.33
       zod:
-        specifier: 4.6.5
-        version: 4.6.5
+        specifier: 4.6.6
+        version: 4.6.6
     devDependencies:
       '@types/papaparse':
         specifier: 5.5.2
@@ -455,8 +455,8 @@ importers:
         specifier: 3.0.9
         version: 3.0.9(prosemirror-model@1.25.12)(prosemirror-state@1.4.4)(prosemirror-view@1.42.5)(y-protocols@1.0.7(yjs@13.6.33))(yjs@13.6.33)
       dompurify:
-        specifier: 3.4.16
-        version: 3.4.16
+        specifier: 3.4.17
+        version: 3.4.17
       lowlight:
         specifier: 3.3.0
         version: 3.3.0
@@ -492,8 +492,8 @@ importers:
         specifier: 2.0.2
         version: 2.0.2
       dompurify:
-        specifier: 3.4.16
-        version: 3.4.16
+        specifier: 3.4.17
+        version: 3.4.17
       fflate:
         specifier: 0.8.3
         version: 0.8.3
@@ -513,8 +513,8 @@ importers:
         specifier: 13.6.33
         version: 13.6.33
       zod:
-        specifier: 4.6.5
-        version: 4.6.5
+        specifier: 4.6.6
+        version: 4.6.6
     devDependencies:
       '@testing-library/dom':
         specifier: 10.4.2
@@ -565,8 +565,8 @@ importers:
         specifier: 2.0.2
         version: 2.0.2
       dompurify:
-        specifier: 3.4.16
-        version: 3.4.16
+        specifier: 3.4.17
+        version: 3.4.17
       mdast-util-from-markdown:
         specifier: 2.0.3
         version: 2.0.3
@@ -668,8 +668,8 @@ importers:
         specifier: 13.6.33
         version: 13.6.33
       zod:
-        specifier: 4.6.5
-        version: 4.6.5
+        specifier: 4.6.6
+        version: 4.6.6
     devDependencies:
       ajv:
         specifier: 8.20.0
@@ -757,8 +757,8 @@ importers:
         specifier: 13.6.33
         version: 13.6.33
       zod:
-        specifier: 4.6.5
-        version: 4.6.5
+        specifier: 4.6.6
+        version: 4.6.6
     devDependencies:
       '@testing-library/react':
         specifier: 16.3.3
@@ -1305,11 +1305,11 @@ packages:
       y-protocols: ^1.0.6
       yjs: ^13.6.8
 
-  '@hono/node-server@2.1.1':
-    resolution: {integrity: sha512-ELuehkj5VCBdgEw9zs+ivkKwyzzUCSQuE96YmiPvn1ECBoZCczbFXJLeEGMTYjphP6gydh4pHMqEYPVMYUVgQg==}
+  '@hono/node-server@2.1.6':
+    resolution: {integrity: sha512-p/KH9MnfNcsm3sR6x4lNgm5j+QN4Et8srKredl9DZfXiyZ1UQ3aQ2YVpFLbqktYN5JI+DB+VZFKM2PqE5hLKjQ==}
     engines: {node: '>=20'}
     peerDependencies:
-      hono: ^4
+      hono: ^4 || ^5.0.0-0
 
   '@humanfs/core@0.19.2':
     resolution: {integrity: sha512-UhXNm+CFMWcbChXywFwkmhqjs3PRCmcSa/hfBgLIb7oQ5HNb1wS0icWsGtSAUNgefHeI+eBrA8I1fxmbHsGdvA==}
@@ -3433,8 +3433,8 @@ packages:
   dom-accessibility-api@0.6.3:
     resolution: {integrity: sha512-7ZgogeTnjuHbo+ct10G9Ffp0mif17idi0IyWNVA/wcwcm7NPOD/WEHVP3n7n3MhXqxoIYm8d6MuZohYWIZ4T3w==}
 
-  dompurify@3.4.16:
-    resolution: {integrity: sha512-sqo+pNp3qRhCIpbgRi1y8Tgk27Bo2Ry7w0dC1NBeNTdZChWjz9Xb/KOoZbRP/R6pQZ80Qw8YhXw13hWWBbMRnQ==}
+  dompurify@3.4.17:
+    resolution: {integrity: sha512-B/pSlYVHQ58kqISD/yDjuJ1yfzI34m1gF4lAod2bwSRhiN4K5Cl3H8Af7hqB2PmTL911tdEudnnXn5FnhRoz0w==}
 
   dts-resolver@3.0.0:
     resolution: {integrity: sha512-1T1f+z+4tl9XD+m+0HBgWoL/nm0bOIffyWaUuUSBlFg/86IWvfx+wjNaO/ybU0AJzG9/Mi5hBUgGV6zCmWEN7Q==}
@@ -5425,8 +5425,8 @@ packages:
     peerDependencies:
       zod: ^3.25.0 || ^4.0.0
 
-  zod@4.6.5:
-    resolution: {integrity: sha512-v5l/aFXZQeai4awLbOpSoHecE9UiMrnfx75tEXLjNonXVARxQ5mOeipTjROUchszUNCqnE+hqAMujRsRHsut2Q==}
+  zod@4.6.6:
+    resolution: {integrity: sha512-4UmzQUF5fxvfcYHlbjBmejU+w+hbDnWFx4aS8kBx7nPBHcO2SqPbpAG8snbdg+Xse4pRefR98hgjFgIMCI/UhA==}
 
   zustand@5.0.15:
     resolution: {integrity: sha512-MpSEjRiBkA9crSYeOUH32rJC7SVqAbm0Fqcqge/bUi2PPoLcBWKOsG+C8mevmpr8TwXHBVkChbbJiyvkE+i/3A==}
@@ -5838,7 +5838,7 @@ snapshots:
     transitivePeerDependencies:
       - srvx
 
-  '@hono/node-server@2.1.1(hono@4.13.11)':
+  '@hono/node-server@2.1.6(hono@4.13.11)':
     dependencies:
       hono: 4.13.11
 
@@ -7899,7 +7899,7 @@ snapshots:
 
   dom-accessibility-api@0.6.3: {}
 
-  dompurify@3.4.16:
+  dompurify@3.4.17:
     optionalDependencies:
       '@types/trusted-types': 2.0.7
 
@@ -8096,8 +8096,8 @@ snapshots:
       '@babel/parser': 7.29.9
       eslint: 9.39.5(jiti@2.7.0)
       hermes-parser: 0.25.1
-      zod: 4.6.5
-      zod-validation-error: 4.0.2(zod@4.6.5)
+      zod: 4.6.6
+      zod-validation-error: 4.0.2(zod@4.6.6)
     transitivePeerDependencies:
       - supports-color
 
@@ -8891,7 +8891,7 @@ snapshots:
       d3-sankey: 0.12.3
       dagre-d3-es: 7.0.14
       dayjs: 1.11.23
-      dompurify: 3.4.16
+      dompurify: 3.4.17
       elkjs: 0.9.3
       es-toolkit: 1.52.0
       katex: 0.16.47
@@ -10176,11 +10176,11 @@ snapshots:
       '@yuku-parser/binding-win32-arm64': 0.10.2
       '@yuku-parser/binding-win32-x64': 0.10.2
 
-  zod-validation-error@4.0.2(zod@4.6.5):
+  zod-validation-error@4.0.2(zod@4.6.6):
     dependencies:
-      zod: 4.6.5
+      zod: 4.6.6
 
-  zod@4.6.5: {}
+  zod@4.6.6: {}
 
   zustand@5.0.15(@types/react@19.3.0)(react@19.3.0)(use-sync-external-store@1.7.0(react@19.3.0)):
     optionalDependencies:

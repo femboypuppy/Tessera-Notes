@@ -30,7 +30,7 @@
     "react-dom": "19.3.0",
     "react-router": "8.4.0",
     "yjs": "13.6.33",
-    "zod": "4.6.5",
+    "zod": "4.6.6",
     "zustand": "5.0.15"
   },
   "devDependencies": {
