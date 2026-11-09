@@ -91,4 +91,5 @@ change, and you can undo it.
 ## Deleting
 
 Pages you delete go to the trash first. **Delete forever** (from the trash, after a confirmation)
-removes the page and its history from your device and from the server.
+removes the page and its history from your device and from the server. In the trash, filter pages
+by title and sort them newest first, oldest first or by title.
