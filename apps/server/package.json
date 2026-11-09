@@ -24,7 +24,7 @@
     "@tessera/core": "workspace:*",
     "argon2": "0.45.1",
     "better-sqlite3": "13.0.3",
-    "hono": "4.13.9",
+    "hono": "4.13.11",
     "nanoid": "6.0.1",
     "pino": "10.3.1",
     "ws": "8.21.3",
