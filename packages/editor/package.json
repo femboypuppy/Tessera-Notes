@@ -51,7 +51,7 @@
     "@tiptap/react": "3.31.3",
     "@tiptap/suggestion": "3.31.3",
     "@tiptap/y-tiptap": "3.0.9",
-    "dompurify": "3.4.16",
+    "dompurify": "3.4.17",
     "lowlight": "3.3.0",
     "lucide-react": "1.48.0",
     "y-protocols": "1.0.7",
