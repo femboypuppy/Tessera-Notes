@@ -35,6 +35,9 @@ Click a page in the sidebar, or tab into the tree, then:
 | Nest it under the page above        | <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>→</kbd>           |
 | Move it out one level               | <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>←</kbd>           |
 
+To close every expanded page at once, hover over or tab to the **Pages** heading and choose
+**Collapse all**.
+
 ## Page title
 
 | Action                         | Shortcut                                        |
