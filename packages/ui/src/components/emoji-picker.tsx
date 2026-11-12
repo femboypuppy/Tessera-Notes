@@ -1,5 +1,5 @@
 import { Search, Shuffle, Trash2 } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import { tUi } from '../i18n/index';
 import { cn } from '../lib/cn';
 import { Button } from './button';
@@ -153,10 +153,22 @@ export function EmojiPicker({
       .map((item) => item.entry);
   }, [data, query]);
 
-  const pick = (emoji: string) => {
-    rememberRecent(emoji);
-    onSelect(emoji);
-  };
+  const pick = useCallback(
+    (emoji: string) => {
+      rememberRecent(emoji);
+      onSelect(emoji);
+    },
+    [onSelect],
+  );
+
+  // Enter in the search box before the data has loaded picks the first result once it arrives.
+  const pendingEnter = useRef(false);
+  useEffect(() => {
+    if (!pendingEnter.current || !results) return;
+    pendingEnter.current = false;
+    const first = results[0];
+    if (first) pick(first.emoji);
+  }, [results, pick]);
 
   const buttons = () => [
     ...(gridRef.current?.querySelectorAll<HTMLButtonElement>('button[data-emoji]') ?? []),
@@ -220,7 +232,10 @@ export function EmojiPicker({
             autoFocus={autoFocus}
             type="search"
             value={query}
-            onChange={(event) => setQuery(event.target.value)}
+            onChange={(event) => {
+              pendingEnter.current = false;
+              setQuery(event.target.value);
+            }}
             onKeyDown={(event) => {
               if (event.key === 'ArrowDown') {
                 event.preventDefault();
@@ -230,6 +245,9 @@ export function EmojiPicker({
                 if (first) {
                   event.preventDefault();
                   pick(first.emoji);
+                } else if (!data && !failed && query.trim()) {
+                  event.preventDefault();
+                  pendingEnter.current = true;
                 }
               }
             }}
