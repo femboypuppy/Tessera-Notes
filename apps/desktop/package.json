@@ -22,12 +22,12 @@
     "build:linux-docker": "node scripts/build-linux-in-docker.mjs"
   },
   "dependencies": {
-    "@tauri-apps/api": "2.11.1",
+    "@tauri-apps/api": "2.12.4",
     "@tessera/core": "workspace:*",
     "@tessera/ui": "workspace:*",
-    "lucide-react": "1.48.0",
+    "lucide-react": "1.72.0",
     "yjs": "13.6.33",
-    "zod": "4.6.6"
+    "zod": "4.6.7"
   },
   "peerDependencies": {
     "react": "^19.0.0",
@@ -36,7 +36,7 @@
   "devDependencies": {
     "@tauri-apps/cli": "2.11.5",
     "@tessera/importers": "workspace:*",
-    "react": "19.3.0",
-    "react-dom": "19.3.0"
+    "react": "19.3.1",
+    "react-dom": "19.3.1"
   }
 }
