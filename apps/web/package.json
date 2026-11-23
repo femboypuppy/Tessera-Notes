@@ -34,10 +34,10 @@
     "zustand": "5.0.15"
   },
   "devDependencies": {
-    "@tailwindcss/vite": "4.3.3",
+    "@tailwindcss/vite": "4.3.5",
     "@tessera/testkit": "workspace:*",
-    "@vitejs/plugin-react": "6.1.1",
-    "tailwindcss": "4.3.3",
-    "vite": "8.3.0"
+    "@vitejs/plugin-react": "6.3.0",
+    "tailwindcss": "4.3.5",
+    "vite": "8.3.8"
   }
 }
