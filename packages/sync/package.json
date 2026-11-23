@@ -23,13 +23,13 @@
     "lint": "eslint . --max-warnings 0"
   },
   "dependencies": {
-    "@hocuspocus/provider": "4.7.0",
+    "@hocuspocus/provider": "4.8.0",
     "@tessera/core": "workspace:*",
     "@tessera/ui": "workspace:*",
-    "lucide-react": "1.48.0",
+    "lucide-react": "1.77.0",
     "y-protocols": "1.0.7",
     "yjs": "13.6.33",
-    "zod": "4.6.6"
+    "zod": "4.6.7"
   },
   "peerDependencies": {
     "react": "^19.0.0",
@@ -39,7 +39,7 @@
     "@testing-library/react": "16.3.3",
     "@testing-library/user-event": "14.6.7",
     "fake-indexeddb": "6.2.5",
-    "react": "19.3.0",
-    "react-dom": "19.3.0"
+    "react": "19.3.1",
+    "react-dom": "19.3.1"
   }
 }
