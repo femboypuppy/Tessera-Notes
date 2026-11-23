@@ -37,8 +37,8 @@
   },
   "devDependencies": {
     "@testing-library/react": "16.3.3",
-    "@testing-library/user-event": "14.6.7",
-    "fake-indexeddb": "6.2.5",
+    "@testing-library/user-event": "14.6.13",
+    "fake-indexeddb": "6.2.8",
     "react": "19.3.0",
     "react-dom": "19.3.0"
   }

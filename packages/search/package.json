@@ -41,7 +41,7 @@
     "react-dom": "^19.0.0"
   },
   "devDependencies": {
-    "fake-indexeddb": "6.2.5",
+    "fake-indexeddb": "6.2.8",
     "react": "19.3.0",
     "react-dom": "19.3.0"
   }
