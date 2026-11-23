@@ -26,12 +26,12 @@
     "@tessera/core": "workspace:*",
     "@tessera/plugin-api": "workspace:*",
     "@tessera/ui": "workspace:*",
-    "acorn": "8.18.0",
+    "acorn": "8.19.0",
     "fflate": "0.8.3",
-    "lucide-react": "1.48.0",
-    "react-router": "8.4.0",
+    "lucide-react": "1.77.0",
+    "react-router": "8.5.2",
     "yjs": "13.6.33",
-    "zod": "4.6.6"
+    "zod": "4.6.7"
   },
   "peerDependencies": {
     "react": "^19.0.0",
@@ -42,8 +42,8 @@
     "fake-indexeddb": "6.2.5",
     "fast-check": "4.10.2",
     "mermaid": "12.0.0",
-    "react": "19.3.0",
-    "react-dom": "19.3.0",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
     "vite": "8.3.0"
   }
 }
